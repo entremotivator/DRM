@@ -6,7 +6,7 @@ import json
 from google.oauth2.service_account import Credentials
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
-# ======= HARD CODED SHEET CONFIGURATION =======
+# ======= SHEET CONFIGURATION =======
 SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
@@ -62,7 +62,6 @@ st.sidebar.caption("Built with ❤️ using Streamlit + Google Sheets + AgGrid."
 selected_tab = st.selectbox("Select CRM Section (Tab):", list(tabs_columns.keys()))
 expected_columns = tabs_columns[selected_tab]
 
-# ======= LOAD DATA FROM SHEET =======
 def load_gsheet_data():
     if not gc:
         return pd.DataFrame(columns=expected_columns)
@@ -87,38 +86,12 @@ def load_gsheet_data():
         st.error(f"❌ Could not load Google Sheet: {e}")
         return pd.DataFrame(columns=expected_columns)
 
-# ======= SESSION STATE FOR DATAFRAME =======
-if "df" not in st.session_state or st.session_state.get("last_tab") != selected_tab:
-    st.session_state.df = load_gsheet_data()
-    st.session_state.last_tab = selected_tab
-
-df = st.session_state.df
-
-# ======= DEMO DATA (if empty) =======
-def get_demo_data():
-    # 15 rows of realistic demo data (see previous answer for more)
-    data = [
-        ["Alice","Johnson","Alice Johnson","alice.j@acme.com","555-123-4567","ACME001","Technology","CTO",500,"acme.com","LinkedIn","2025-07-01"],
-        ["Bob","Smith","Bob Smith","bob.smith@globex.net","555-234-5678","GLOBEX002","Manufacturing","Operations Manager",1200,"globex.net","Referral","2025-06-15"],
-        ["Carol","Lee","Carol Lee","carol.lee@initech.org","555-345-6789","INIT003","Finance","CFO",300,"initech.org","Website","2025-07-10"],
-        ["David","Kim","David Kim","dkim@umbrella.co","555-456-7890","UMBR004","Healthcare","HR Director",800,"umbrella.co","Conference","2025-07-05"],
-        ["Eva","Martinez","Eva Martinez","eva.m@wayneenterprises.com","555-567-8901","WAYNE005","Retail","Sales Lead",2500,"wayneenterprises.com","LinkedIn","2025-06-20"],
-        ["Frank","O'Neil","Frank O'Neil","foneil@starkind.com","555-678-9012","STARK006","Technology","Product Manager",150,"starkind.com","Cold Email","2025-07-12"],
-        ["Grace","Patel","Grace Patel","grace.patel@oscorp.biz","555-789-0123","OSCORP007","Biotech","R&D Lead",600,"oscorp.biz","Referral","2025-07-13"],
-        ["Henry","Wang","Henry Wang","henryw@bluthco.com","555-890-1234","BLUTH008","Real Estate","CEO",90,"bluthco.com","Event","2025-07-09"],
-        ["Isabella","Rossi","Isabella Rossi","irossi@vandalay.com","555-901-2345","VAND009","Logistics","Supply Chain Dir",2000,"vandalay.com","Website","2025-07-11"],
-        ["Jack","Müller","Jack Müller","jack.m@hooli.de","555-012-3456","HOOLI010","Technology","Data Scientist",3000,"hooli.de","LinkedIn","2025-07-13"],
-        ["Karen","Silva","Karen Silva","karen.silva@wonka.com","555-112-2334","WONKA011","Food & Bev","Marketing Manager",400,"wonka.com","Referral","2025-07-02"],
-        ["Leo","Dupont","Leo Dupont","l.dupont@dundermifflin.fr","555-223-3445","DUNDER012","Paper","Regional Manager",170,"dundermifflin.fr","Website","2025-07-07"],
-        ["Mia","Chen","Mia Chen","mia.chen@massive.com","555-334-4556","MASS013","Media","Editor-in-Chief",800,"massive.com","LinkedIn","2025-07-04"],
-        ["Noah","Brown","Noah Brown","noah.brown@prestige.com","555-445-5667","PREST014","Consulting","Managing Partner",60,"prestige.com","Conference","2025-07-06"],
-        ["Olivia","Novak","Olivia Novak","olivia.novak@cyberdyne.ai","555-556-6778","CYBER015","AI","Lead Engineer",1200,"cyberdyne.ai","LinkedIn","2025-07-13"],
-    ]
-    return pd.DataFrame(data, columns=tabs_columns["Basic Info"])
-
-if df.empty and selected_tab == "Basic Info":
-    df = get_demo_data()
-    st.session_state.df = df
+# ======= ALWAYS LOAD LIVE DATA =======
+if gc:
+    df = load_gsheet_data()
+else:
+    st.warning("Authenticate with Google to load live data.")
+    df = pd.DataFrame(columns=expected_columns)
 
 # ======= CSV UPLOAD AND MERGE =======
 uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"])
@@ -130,8 +103,7 @@ if uploaded_file:
                 new_df[col] = ""
         new_df = new_df[expected_columns]
         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
-        st.session_state.df = df
-        st.success("✅ CSV uploaded and merged!")
+        st.success("✅ CSV uploaded and merged! (Not yet saved to Google Sheets)")
     except Exception as e:
         st.error(f"❌ Error reading CSV: {e}")
 
@@ -156,22 +128,15 @@ grid_response = AgGrid(
     reload_data=False
 )
 
-new_df = grid_response['data']
+edited_df = grid_response['data']
 selected = grid_response['selected_rows']
-
-# Save edits to session state
-if not new_df.equals(df):
-    st.session_state.df = new_df
-    df = new_df
-    st.success("✅ Table updated! (Don't forget to sync with Google Sheets below)")
 
 # ======= DELETE ROW BUTTON =======
 if selected:
     st.warning(f"Selected: {selected[0]}")
     if st.button("🗑️ Delete Selected Row"):
-        idx = df.index[df['full_name'] == selected[0]['full_name']]
-        df = df.drop(idx).reset_index(drop=True)
-        st.session_state.df = df
+        idx = edited_df.index[edited_df['full_name'] == selected[0]['full_name']]
+        edited_df = edited_df.drop(idx).reset_index(drop=True)
         st.success("Row deleted! (Don't forget to sync with Google Sheets below)")
 
 # ======= ADD NEW ENTRY FORM =======
@@ -186,12 +151,11 @@ with st.form("add_entry_form"):
             new_data[col] = cols[idx].text_input(col, placeholder=f"Enter {col}")
     submitted = st.form_submit_button("Add Entry")
     if submitted:
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True).drop_duplicates()
-        st.session_state.df = df
+        edited_df = pd.concat([edited_df, pd.DataFrame([new_data])], ignore_index=True).drop_duplicates()
         st.success("✅ New entry added! (Don't forget to sync with Google Sheets below)")
 
 # ======= DOWNLOAD CSV =======
-csv_data = df.to_csv(index=False)
+csv_data = edited_df.to_csv(index=False)
 st.download_button(
     label=f"📥 Download {selected_tab} CSV",
     data=csv_data,
@@ -219,7 +183,6 @@ def sync_to_gsheet(df):
         st.error(f"❌ Google Sheets error: {e}")
 
 if st.button("🚀 Sync ALL Changes to Google Sheets (Overwrite Tab)"):
-    sync_to_gsheet(df)
+    sync_to_gsheet(edited_df)
 
-st.caption("✅ View, add, edit, select, and sync your CRM data. Built with ❤️ using Streamlit + Google Sheets + AgGrid.")
-
+st.caption("✅ Always showing live Google Sheets data. Edit, add, delete, and sync as needed. Built with ❤️ using Streamlit + Google Sheets + AgGrid.")
