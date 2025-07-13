@@ -9,7 +9,7 @@ import re
 
 # ======= CONFIGURATION =======
 SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/"
 
 # All client fields as specified
 CLIENT_FIELDS = [
