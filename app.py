@@ -76,7 +76,6 @@ def load_gsheet_data():
                 df = pd.DataFrame(columns=expected_columns)
         except gspread.exceptions.WorksheetNotFound:
             df = pd.DataFrame(columns=expected_columns)
-        # Ensure all expected columns are present
         for col in expected_columns:
             if col not in df.columns:
                 df[col] = ""
@@ -94,7 +93,7 @@ else:
     df = pd.DataFrame(columns=expected_columns)
 
 # ======= CSV UPLOAD AND MERGE =======
-uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"])
+uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"], key="csv_"+selected_tab)
 if uploaded_file:
     try:
         new_df = pd.read_csv(uploaded_file)
@@ -125,7 +124,7 @@ grid_response = AgGrid(
     fit_columns_on_grid_load=True,
     enable_enterprise_modules=False,
     height=500,
-    reload_data=False
+    reload_data=True  # Always reload from df, so always fresh!
 )
 
 edited_df = grid_response['data']
