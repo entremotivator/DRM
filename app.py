@@ -305,7 +305,7 @@ def append_client_to_sheet(gc, client_data):
 try:
     st.markdown("""
     <div class="main-header">
-        <h1 style='font-size:3em; margin:0;'>👥 Live CRM Client Profiles</h1>
+        <h1 style='font-size:3em; margin:0;'>���� Live CRM Client Profiles</h1>
         <p style='font-size:1.2em; margin:0.5rem 0 0 0; opacity:0.9;'>
             Real-time Google Sheets Integration • Individual Client Profiles • Add New Clients
         </p>
