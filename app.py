@@ -305,7 +305,7 @@ def append_client_to_sheet(gc, client_data):
 try:
     st.markdown("""
     <div class="main-header">
-        <h1 style='font-size:3em; margin:0;'>���� Live CRM Client Profiles</h1>
+        <h1 style='font-size:3em; margin:0;'>👥 Live CRM Client Profiles</h1>
         <p style='font-size:1.2em; margin:0.5rem 0 0 0; opacity:0.9;'>
             Real-time Google Sheets Integration • Individual Client Profiles • Add New Clients
         </p>
@@ -315,50 +315,53 @@ except Exception as e:
     st.error(f"Error displaying header: {e}")
 
 # ======= SIDEBAR AUTHENTICATION =======
+# Initialize variables
+gc = None
+auto_refresh = False
+refresh_interval = 60
+
 try:
-    with st.sidebar:
-        st.header("🔑 Authentication")
-        auth_file = st.file_uploader("Upload Service Account JSON", type=["json"])
-        
-        gc = None
-        if auth_file:
-            try:
-                creds_dict = json.load(auth_file)
-                creds = Credentials.from_service_account_info(
-                    creds_dict,
-                    scopes=["https://www.googleapis.com/auth/spreadsheets"]
-                )
-                gc = gspread.authorize(creds)
-                st.success("✅ Connected to Google Sheets!")
-                st.markdown(f"[📊 Open Sheet]({SHEET_URL})")
-            except Exception as e:
-                st.error(f"❌ Auth Error: {str(e)[:100]}...")
-        else:
-            st.info("⬆️ Upload your Google Service Account JSON")
-        
-        st.markdown("---")
-        
-        # Auto-refresh settings
-        st.header("🔄 Live Updates")
-        auto_refresh = st.checkbox("Enable Auto-refresh", value=False)
-        refresh_interval = 60
-        if auto_refresh:
-            refresh_interval = st.selectbox(
-                "Refresh Interval:",
-                [30, 60, 120, 300],
-                index=1,
-                format_func=lambda x: f"{x} seconds"
+    # Sidebar header
+    st.sidebar.header("🔑 Authentication")
+    auth_file = st.sidebar.file_uploader("Upload Service Account JSON", type=["json"])
+    
+    if auth_file:
+        try:
+            creds_dict = json.load(auth_file)
+            creds = Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/spreadsheets"]
             )
-        
-        # Manual refresh button
-        if st.button("🔄 Refresh Now"):
-            st.cache_data.clear()
-            if 'df' in st.session_state:
-                del st.session_state['df']
-            st.rerun()
-        
-        st.markdown("---")
-        st.caption("Built with ❤️ using Streamlit")
+            gc = gspread.authorize(creds)
+            st.sidebar.success("✅ Connected to Google Sheets!")
+            st.sidebar.markdown(f"[📊 Open Sheet]({SHEET_URL})")
+        except Exception as e:
+            st.sidebar.error(f"❌ Auth Error: {str(e)[:100]}...")
+    else:
+        st.sidebar.info("⬆️ Upload your Google Service Account JSON")
+    
+    st.sidebar.markdown("---")
+    
+    # Auto-refresh settings
+    st.sidebar.header("🔄 Live Updates")
+    auto_refresh = st.sidebar.checkbox("Enable Auto-refresh", value=False)
+    if auto_refresh:
+        refresh_interval = st.sidebar.selectbox(
+            "Refresh Interval:",
+            [30, 60, 120, 300],
+            index=1,
+            format_func=lambda x: f"{x} seconds"
+        )
+    
+    # Manual refresh button
+    if st.sidebar.button("🔄 Refresh Now"):
+        st.cache_data.clear()
+        if 'df' in st.session_state:
+            del st.session_state['df']
+        st.rerun()
+    
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Built with ❤️ using Streamlit")
 
 except Exception as e:
     st.error(f"Error in sidebar: {e}")
