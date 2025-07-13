@@ -1,4 +1,49 @@
-pandas
-gspread
-google-auth
-streamlit-aggrid
+# Core Streamlit and Web Framework
+streamlit>=1.28.0
+streamlit-option-menu>=0.3.6
+
+# Data Processing and Analysis
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+
+# Google Sheets Integration
+gspread>=5.10.0
+google-auth>=2.22.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+
+# Data Visualization
+plotly>=5.15.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Date and Time Handling
+python-dateutil>=2.8.0
+
+# Data Validation and Cleaning
+email-validator>=2.0.0
+phonenumbers>=8.13.0
+validators>=0.20.0
+
+# File Processing
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+Pillow>=10.0.0
+
+# Utilities
+requests>=2.31.0
+urllib3>=2.0.0
+certifi>=2023.7.22
+
+# Development and Testing (Optional)
+pytest>=7.4.0
+black>=23.7.0
+flake8>=6.0.0
+
+# Additional Streamlit Components
+streamlit-aggrid>=0.3.4
+streamlit-authenticator>=0.2.3
+streamlit-extras>=0.3.0
+
