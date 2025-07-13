@@ -1,110 +1,19 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-# =======================
-# ✅ Set Streamlit Page Theme
-# =======================
-st.set_page_config(
-    page_title="CRM Client Profiles Manager",
-    layout="wide",
-    page_icon="📋"
-)
+# ========== HARD CODED CONFIGURATION ==========
+SERVICE_ACCOUNT_JSON = {
+    # Paste your service account JSON here as a Python dict!
+    # Example:
+    # "type": "service_account",
+    # "project_id": "...",
+    # ...
+}
+SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
 
-# =======================
-# 🎨 Custom Styling Section
-# =======================
-st.markdown(
-    """
-    <style>
-    .big-title {
-        font-size: 3em;
-        font-weight: bold;
-        color: #4CAF50;
-    }
-    .section-header {
-        font-size: 1.5em;
-        margin-top: 2rem;
-        color: #0066CC;
-    }
-    .info-text {
-        color: #444;
-        font-size: 1em;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown("<div class='big-title'>📋 CRM Client Profiles Manager</div>", unsafe_allow_html=True)
-
-st.markdown(
-    """
-    This app helps you manage your CRM client profiles in **separate tabs**!  
-    ✅ Upload, edit, and download CSVs  
-    ✅ Append new data to **Google Sheets tabs**  
-    ✅ Share one Sheet with your whole team
-
-    ---
-    """
-)
-
-# ========================
-# ⚙️ SIDEBAR CONFIGURATION
-# ========================
-st.sidebar.header("🔧 App Configuration")
-
-theme_choice = st.sidebar.radio(
-    "Choose App Theme",
-    ("Light 🌞", "Dark 🌜"),
-    index=0
-)
-
-if theme_choice == "Dark 🌜":
-    st.markdown(
-        """
-        <style>
-        body { background-color: #1E1E1E; color: #EEE; }
-        .stApp { background-color: #1E1E1E; color: #EEE; }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-DEFAULT_SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
-
-st.sidebar.markdown("#### 1️⃣ Upload Google Service Account JSON")
-auth_file = st.sidebar.file_uploader("Service Account JSON", type=["json"])
-
-st.sidebar.markdown("#### 2️⃣ Google Sheet ID (already prefilled)")
-sheet_id = st.sidebar.text_input(
-    "Paste your Google Sheet ID here",
-    value=DEFAULT_SHEET_ID
-)
-
-# Load Service Account credentials
-gc = None
-if auth_file and sheet_id:
-    try:
-        creds_dict = json.load(auth_file)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-        gc = gspread.authorize(creds)
-        st.sidebar.success("✅ Google Authentication Successful!")
-        st.sidebar.caption("You're ready to append data to your Google Sheet! 📈")
-    except Exception as e:
-        st.sidebar.error(f"❌ Auth Error: {e}")
-else:
-    st.sidebar.info("⚠️ Upload JSON & confirm Sheet ID to enable Google Sheets integration.")
-
-st.sidebar.markdown("---")
-st.sidebar.caption("✅ Built with ❤️ using Streamlit + Google Sheets.")
-
-# ================================
-# 📚 TABS / COLUMNS CONFIGURATION
-# ================================
 tabs_columns = {
     "Basic Info": [
         "first_name","last_name","full_name","email","phone","company_id",
@@ -128,49 +37,102 @@ tabs_columns = {
     ],
 }
 
-# ========================
-# 📌 MAIN APP UI SECTION
-# ========================
-st.markdown("### ✅ Choose CRM Section (Tab)")
-selected_tab = st.selectbox("Select the section you want to work with:", list(tabs_columns.keys()))
+st.set_page_config(page_title="CRM Full Manager", layout="wide", page_icon="📋")
+st.markdown("<h1 style='font-size:3em;color:#4CAF50;'>📋 CRM Client Profiles Manager</h1>", unsafe_allow_html=True)
+
+selected_tab = st.selectbox("Select CRM Section (Tab):", list(tabs_columns.keys()))
 expected_columns = tabs_columns[selected_tab]
 
-# -------------------------
-st.markdown(f"<div class='section-header'>📤 Upload Existing CSV for: {selected_tab}</div>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader(f"Upload your {selected_tab} CSV here", type=["csv"])
+# ========== LOAD DATA ==========
+@st.cache_data(show_spinner=False)
+def load_gsheet_data():
+    try:
+        creds = Credentials.from_service_account_info(
+            SERVICE_ACCOUNT_JSON,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SHEET_ID)
+        try:
+            worksheet = sh.worksheet(selected_tab)
+            data = worksheet.get_all_values()
+            if len(data) > 1:
+                df = pd.DataFrame(data[1:], columns=data[0])
+            else:
+                df = pd.DataFrame(columns=expected_columns)
+        except gspread.exceptions.WorksheetNotFound:
+            df = pd.DataFrame(columns=expected_columns)
+        # Ensure all expected columns are present
+        for col in expected_columns:
+            if col not in df.columns:
+                df[col] = ""
+        df = df[expected_columns]
+        return df
+    except Exception as e:
+        st.error(f"❌ Could not load Google Sheet: {e}")
+        return pd.DataFrame(columns=expected_columns)
 
+df = load_gsheet_data()
+
+# ========== CSV UPLOAD ==========
+uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"])
 if uploaded_file:
     try:
-        df = pd.read_csv(uploaded_file)
-        st.success("✅ CSV uploaded successfully!")
+        new_df = pd.read_csv(uploaded_file)
+        for col in expected_columns:
+            if col not in new_df.columns:
+                new_df[col] = ""
+        new_df = new_df[expected_columns]
+        df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
+        st.success("✅ CSV uploaded and merged!")
     except Exception as e:
         st.error(f"❌ Error reading CSV: {e}")
-        df = pd.DataFrame(columns=expected_columns)
+
+# ========== VIEW & SELECT ==========
+st.markdown("### 👀 Current Data")
+st.dataframe(df, use_container_width=True, height=500)
+
+if not df.empty:
+    selected_idx = st.selectbox("Select a row to edit/delete:", df.index, format_func=lambda x: f"{df.at[x, expected_columns[0]]} | {df.at[x, expected_columns[1]] if len(expected_columns)>1 else ''}")
 else:
-    df = pd.DataFrame(columns=expected_columns)
+    selected_idx = None
 
-# -------------------------
-st.markdown(f"<div class='section-header'>👀 Current Data for {selected_tab}</div>", unsafe_allow_html=True)
-st.dataframe(df, use_container_width=True)
+# ========== EDIT ==========
+st.markdown("### ✏️ Edit Selected Row")
+if selected_idx is not None and not df.empty:
+    edit_data = {}
+    cols = st.columns(len(expected_columns))
+    for idx, col in enumerate(expected_columns):
+        value = df.at[selected_idx, col]
+        if col == "assessment_date":
+            edit_data[col] = cols[idx].date_input(col, value=pd.to_datetime(value) if value else datetime.date.today())
+        else:
+            edit_data[col] = cols[idx].text_input(col, value=value)
+    if st.button("💾 Save Edit"):
+        for col in expected_columns:
+            df.at[selected_idx, col] = edit_data[col]
+        st.success("Row updated! (Don't forget to sync with Google Sheets below)")
 
-# -------------------------
-st.markdown(f"<div class='section-header'>➕ Add New Entry to {selected_tab}</div>", unsafe_allow_html=True)
+    if st.button("🗑️ Delete Row"):
+        df = df.drop(index=selected_idx).reset_index(drop=True)
+        st.warning("Row deleted! (Don't forget to sync with Google Sheets below)")
+
+# ========== ADD ==========
+st.markdown("### ➕ Add New Entry")
 with st.form("add_entry_form"):
     new_data = {}
     cols = st.columns(len(expected_columns))
     for idx, col in enumerate(expected_columns):
         if col == "assessment_date":
-            new_data[col] = datetime.date.today()
-            cols[idx].text(f"{col}: {new_data[col]} (auto-filled)")
+            new_data[col] = cols[idx].date_input(col, value=datetime.date.today())
         else:
             new_data[col] = cols[idx].text_input(col, placeholder=f"Enter {col}")
     submitted = st.form_submit_button("Add Entry")
     if submitted:
         df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-        st.success("✅ New entry added!")
+        st.success("✅ New entry added! (Don't forget to sync with Google Sheets below)")
 
-# -------------------------
-st.markdown(f"<div class='section-header'>⬇️ Download Updated {selected_tab} CSV</div>", unsafe_allow_html=True)
+# ========== DOWNLOAD ==========
 csv_data = df.to_csv(index=False)
 st.download_button(
     label=f"📥 Download {selected_tab} CSV",
@@ -179,52 +141,28 @@ st.download_button(
     mime='text/csv'
 )
 
-# -------------------------
-if gc and sheet_id:
-    st.markdown(f"<div class='section-header'>📡 Append New Entries to Google Sheet → **{selected_tab} Tab**</div>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        ✅ This will append only new rows in the current table to your Google Sheet tab.  
-        ✅ If the tab doesn't exist, it will be created automatically.  
-        """
-    )
-    if st.button(f"🚀 Append to Google Sheet Tab: {selected_tab}"):
+# ========== APPEND/UPDATE TO GOOGLE SHEETS ==========
+def sync_to_gsheet(df):
+    try:
+        creds = Credentials.from_service_account_info(
+            SERVICE_ACCOUNT_JSON,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        )
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(SHEET_ID)
         try:
-            sh = gc.open_by_key(sheet_id)
-            try:
-                worksheet = sh.worksheet(selected_tab)
-            except gspread.exceptions.WorksheetNotFound:
-                worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
-                worksheet.append_row(expected_columns)  # Write headers
+            worksheet = sh.worksheet(selected_tab)
+            sh.del_worksheet(worksheet)
+            worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
+        worksheet.update([expected_columns] + df.fillna("").astype(str).values.tolist())
+        st.success(f"✅ Google Sheet '{selected_tab}' updated!")
+        st.info(f"[Open your Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
+    except Exception as e:
+        st.error(f"❌ Google Sheets error: {e}")
 
-            # Get current records in the sheet (excluding header)
-            existing_records = worksheet.get_all_values()
-            if len(existing_records) > 1:
-                existing_data = pd.DataFrame(existing_records[1:], columns=existing_records[0])
-            else:
-                existing_data = pd.DataFrame(columns=expected_columns)
+if st.button("🚀 Sync ALL Changes to Google Sheets (Overwrite Tab)"):
+    sync_to_gsheet(df)
 
-            # Find new rows to append (those not already in sheet)
-            if not df.empty:
-                # Standardize columns for comparison
-                for col in expected_columns:
-                    if col not in df.columns:
-                        df[col] = ""
-                df = df[expected_columns]
-                new_rows = df[~df.apply(tuple, 1).isin(existing_data.apply(tuple, 1))]
-                if new_rows.empty:
-                    st.info("No new data to append. All rows already exist in the sheet.")
-                else:
-                    for _, row in new_rows.iterrows():
-                        worksheet.append_row([str(row.get(col, "")) for col in expected_columns])
-                    st.success(f"✅ {len(new_rows)} new row(s) appended to Google Sheet tab: {selected_tab}!")
-            else:
-                st.warning("⚠️ No data to append. Please add or upload data first.")
-        except Exception as e:
-            st.error(f"❌ Google Sheets error: {e}")
-else:
-    st.info("ℹ️ Google Sheets append option will appear after you authenticate in the sidebar.")
-
-# ========================
-st.markdown("---")
-st.caption("✅ One Google Sheet. Multiple Tabs. Professional CRM Profiles. Built with ❤️ in Streamlit.")
+st.caption("✅ View, add, edit, select, and sync your CRM data. Built with ❤️ using Streamlit + Google Sheets.")
