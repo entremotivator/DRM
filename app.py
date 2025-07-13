@@ -2,17 +2,12 @@ import streamlit as st
 import pandas as pd
 import datetime
 import gspread
+import json
 from google.oauth2.service_account import Credentials
 
-# ========== HARD CODED CONFIGURATION ==========
-SERVICE_ACCOUNT_JSON = {
-    # Paste your service account JSON here as a Python dict!
-    # Example:
-    # "type": "service_account",
-    # "project_id": "...",
-    # ...
-}
+# ======= HARD CODED SHEET CONFIGURATION =======
 SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
 tabs_columns = {
     "Basic Info": [
@@ -40,18 +35,37 @@ tabs_columns = {
 st.set_page_config(page_title="CRM Full Manager", layout="wide", page_icon="📋")
 st.markdown("<h1 style='font-size:3em;color:#4CAF50;'>📋 CRM Client Profiles Manager</h1>", unsafe_allow_html=True)
 
-selected_tab = st.selectbox("Select CRM Section (Tab):", list(tabs_columns.keys()))
-expected_columns = tabs_columns[selected_tab]
-
-# ========== LOAD DATA ==========
-@st.cache_data(show_spinner=False)
-def load_gsheet_data():
+# ======= SIDEBAR AUTHENTICATION =======
+st.sidebar.header("🔑 Google Sheets Authentication")
+auth_file = st.sidebar.file_uploader("Upload Service Account JSON", type=["json"])
+gc = None
+if auth_file:
     try:
+        creds_dict = json.load(auth_file)
         creds = Credentials.from_service_account_info(
-            SERVICE_ACCOUNT_JSON,
+            creds_dict,
             scopes=["https://www.googleapis.com/auth/spreadsheets"]
         )
         gc = gspread.authorize(creds)
+        st.sidebar.success("✅ Google Authentication Successful!")
+        st.sidebar.markdown(f"[Open Google Sheet]({SHEET_URL})")
+    except Exception as e:
+        st.sidebar.error(f"❌ Auth Error: {e}")
+else:
+    st.sidebar.info("⬆️ Upload your Google Service Account JSON to enable Sheets integration.")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Built with ❤️ using Streamlit + Google Sheets.")
+
+# ======= MAIN APP =======
+selected_tab = st.selectbox("Select CRM Section (Tab):", list(tabs_columns.keys()))
+expected_columns = tabs_columns[selected_tab]
+
+# ======= LOAD DATA FROM SHEET =======
+def load_gsheet_data():
+    if not gc:
+        return pd.DataFrame(columns=expected_columns)
+    try:
         sh = gc.open_by_key(SHEET_ID)
         try:
             worksheet = sh.worksheet(selected_tab)
@@ -72,9 +86,14 @@ def load_gsheet_data():
         st.error(f"❌ Could not load Google Sheet: {e}")
         return pd.DataFrame(columns=expected_columns)
 
-df = load_gsheet_data()
+# ======= SESSION STATE FOR DATAFRAME =======
+if "df" not in st.session_state or st.session_state.get("last_tab") != selected_tab:
+    st.session_state.df = load_gsheet_data()
+    st.session_state.last_tab = selected_tab
 
-# ========== CSV UPLOAD ==========
+df = st.session_state.df
+
+# ======= CSV UPLOAD AND MERGE =======
 uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"])
 if uploaded_file:
     try:
@@ -84,20 +103,25 @@ if uploaded_file:
                 new_df[col] = ""
         new_df = new_df[expected_columns]
         df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
+        st.session_state.df = df
         st.success("✅ CSV uploaded and merged!")
     except Exception as e:
         st.error(f"❌ Error reading CSV: {e}")
 
-# ========== VIEW & SELECT ==========
+# ======= FULL TABLE VIEW & SELECTION =======
 st.markdown("### 👀 Current Data")
 st.dataframe(df, use_container_width=True, height=500)
 
 if not df.empty:
-    selected_idx = st.selectbox("Select a row to edit/delete:", df.index, format_func=lambda x: f"{df.at[x, expected_columns[0]]} | {df.at[x, expected_columns[1]] if len(expected_columns)>1 else ''}")
+    selected_idx = st.selectbox(
+        "Select a row to edit/delete:",
+        df.index,
+        format_func=lambda x: " | ".join(str(df.at[x, col]) for col in expected_columns[:2])
+    )
 else:
     selected_idx = None
 
-# ========== EDIT ==========
+# ======= EDIT/DELETE ROW =======
 st.markdown("### ✏️ Edit Selected Row")
 if selected_idx is not None and not df.empty:
     edit_data = {}
@@ -105,19 +129,25 @@ if selected_idx is not None and not df.empty:
     for idx, col in enumerate(expected_columns):
         value = df.at[selected_idx, col]
         if col == "assessment_date":
-            edit_data[col] = cols[idx].date_input(col, value=pd.to_datetime(value) if value else datetime.date.today())
+            try:
+                value = pd.to_datetime(value).date()
+            except:
+                value = datetime.date.today()
+            edit_data[col] = cols[idx].date_input(col, value=value)
         else:
             edit_data[col] = cols[idx].text_input(col, value=value)
     if st.button("💾 Save Edit"):
         for col in expected_columns:
             df.at[selected_idx, col] = edit_data[col]
+        st.session_state.df = df
         st.success("Row updated! (Don't forget to sync with Google Sheets below)")
 
     if st.button("🗑️ Delete Row"):
         df = df.drop(index=selected_idx).reset_index(drop=True)
+        st.session_state.df = df
         st.warning("Row deleted! (Don't forget to sync with Google Sheets below)")
 
-# ========== ADD ==========
+# ======= ADD NEW ENTRY =======
 st.markdown("### ➕ Add New Entry")
 with st.form("add_entry_form"):
     new_data = {}
@@ -129,10 +159,11 @@ with st.form("add_entry_form"):
             new_data[col] = cols[idx].text_input(col, placeholder=f"Enter {col}")
     submitted = st.form_submit_button("Add Entry")
     if submitted:
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True).drop_duplicates()
+        st.session_state.df = df
         st.success("✅ New entry added! (Don't forget to sync with Google Sheets below)")
 
-# ========== DOWNLOAD ==========
+# ======= DOWNLOAD CSV =======
 csv_data = df.to_csv(index=False)
 st.download_button(
     label=f"📥 Download {selected_tab} CSV",
@@ -141,14 +172,12 @@ st.download_button(
     mime='text/csv'
 )
 
-# ========== APPEND/UPDATE TO GOOGLE SHEETS ==========
+# ======= SYNC TO GOOGLE SHEETS =======
 def sync_to_gsheet(df):
+    if not gc:
+        st.error("Google authentication required.")
+        return
     try:
-        creds = Credentials.from_service_account_info(
-            SERVICE_ACCOUNT_JSON,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-        gc = gspread.authorize(creds)
         sh = gc.open_by_key(SHEET_ID)
         try:
             worksheet = sh.worksheet(selected_tab)
@@ -158,7 +187,7 @@ def sync_to_gsheet(df):
             worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
         worksheet.update([expected_columns] + df.fillna("").astype(str).values.tolist())
         st.success(f"✅ Google Sheet '{selected_tab}' updated!")
-        st.info(f"[Open your Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
+        st.info(f"[Open your Google Sheet]({SHEET_URL})")
     except Exception as e:
         st.error(f"❌ Google Sheets error: {e}")
 
