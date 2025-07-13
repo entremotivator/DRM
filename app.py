@@ -3,72 +3,196 @@ import pandas as pd
 import datetime
 import gspread
 import json
+import plotly.express as px
+import plotly.graph_objects as go
 from google.oauth2.service_account import Credentials
+import numpy as np
+from collections import Counter
+import re
 
-# ======= HARD CODED SHEET CONFIGURATION =======
+# ======= ENHANCED CONFIGURATION =======
 SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
-tabs_columns = {
-    "Basic Info": [
-        "first_name","last_name","full_name","email","phone","company_id",
-        "industry","position","company_size","website","source","assessment_date"
-    ],
-    "Contact Info": [
-        "full_name","address_line_1","city","state","postal_code","country"
-    ],
-    "DISC General Profile": ["full_name","discprofile"],
-    "DISC Sales Profile": ["full_name","discsales"],
-    "DISC Communication Style": ["full_name","disc_communiction"],
-    "DISC Leadership Style": ["full_name","leadership_style"],
-    "DISC Team Dynamics": ["full_name","team_dynamics"],
-    "DISC Conflict Resolution": ["full_name","conflict_resolution"],
-    "DISC Customer Service Approach": ["full_name","customer_service_approach"],
-    "DISC Decision-Making Style": ["full_name","decision_making_style"],
-    "DISC Workplace Behavior": ["full_name","workplace_behavior"],
-    "HR & Coaching": [
-        "full_name","hiring_and_recruitment","_coaching_and_development",
-        "career_goals","stress_management","learning_style"
-    ],
+# Enhanced tabs configuration with descriptions
+tabs_config = {
+    "Basic Info": {
+        "columns": [
+            "first_name", "last_name", "full_name", "email", "phone", "company_id",
+            "industry", "position", "company_size", "website", "source", "assessment_date"
+        ],
+        "description": "Core client information and contact details",
+        "icon": "👤"
+    },
+    "Contact Info": {
+        "columns": ["full_name", "address_line_1", "city", "state", "postal_code", "country"],
+        "description": "Physical addresses and location data",
+        "icon": "📍"
+    },
+    "DISC General Profile": {
+        "columns": ["full_name", "discprofile"],
+        "description": "General DISC personality assessments",
+        "icon": "🧠"
+    },
+    "DISC Sales Profile": {
+        "columns": ["full_name", "discsales"],
+        "description": "Sales-focused DISC analysis",
+        "icon": "💼"
+    },
+    "DISC Communication Style": {
+        "columns": ["full_name", "disc_communiction"],
+        "description": "Communication preferences and styles",
+        "icon": "💬"
+    },
+    "DISC Leadership Style": {
+        "columns": ["full_name", "leadership_style"],
+        "description": "Leadership approach and management style",
+        "icon": "👑"
+    },
+    "DISC Team Dynamics": {
+        "columns": ["full_name", "team_dynamics"],
+        "description": "Team collaboration and interaction patterns",
+        "icon": "👥"
+    },
+    "DISC Conflict Resolution": {
+        "columns": ["full_name", "conflict_resolution"],
+        "description": "Conflict handling and resolution approaches",
+        "icon": "⚖️"
+    },
+    "DISC Customer Service Approach": {
+        "columns": ["full_name", "customer_service_approach"],
+        "description": "Customer service and client interaction styles",
+        "icon": "🤝"
+    },
+    "DISC Decision-Making Style": {
+        "columns": ["full_name", "decision_making_style"],
+        "description": "Decision-making processes and preferences",
+        "icon": "🎯"
+    },
+    "DISC Workplace Behavior": {
+        "columns": ["full_name", "workplace_behavior"],
+        "description": "Professional behavior and work environment preferences",
+        "icon": "🏢"
+    },
+    "HR & Coaching": {
+        "columns": [
+            "full_name", "hiring_and_recruitment", "_coaching_and_development",
+            "career_goals", "stress_management", "learning_style"
+        ],
+        "description": "Human resources and professional development data",
+        "icon": "📚"
+    }
 }
 
-st.set_page_config(page_title="CRM Full Manager", layout="wide", page_icon="📋")
-st.markdown("<h1 style='font-size:3em;color:#4CAF50;'>📋 CRM Client Profiles Manager</h1>", unsafe_allow_html=True)
+# ======= PAGE CONFIGURATION =======
+st.set_page_config(
+    page_title="Enhanced CRM Manager", 
+    layout="wide", 
+    page_icon="📊",
+    initial_sidebar_state="expanded"
+)
+
+# ======= CUSTOM CSS STYLING =======
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        padding: 2rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .metric-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #4CAF50;
+        margin: 1rem 0;
+    }
+    .tab-description {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #4CAF50;
+        margin: 1rem 0;
+    }
+    .data-quality-good { color: #4CAF50; font-weight: bold; }
+    .data-quality-warning { color: #FF9800; font-weight: bold; }
+    .data-quality-error { color: #f44336; font-weight: bold; }
+    .stDataFrame {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ======= HEADER =======
+st.markdown("""
+<div class="main-header">
+    <h1 style='font-size:3em; margin:0;'>📊 Enhanced CRM Client Profiles Manager</h1>
+    <p style='font-size:1.2em; margin:0.5rem 0 0 0; opacity:0.9;'>
+        Advanced Analytics • Data Insights • Professional Management
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 # ======= SIDEBAR AUTHENTICATION =======
-st.sidebar.header("🔑 Google Sheets Authentication")
-auth_file = st.sidebar.file_uploader("Upload Service Account JSON", type=["json"])
-gc = None
-if auth_file:
-    try:
-        creds_dict = json.load(auth_file)
-        creds = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
+with st.sidebar:
+    st.header("🔑 Authentication")
+    auth_file = st.file_uploader("Upload Service Account JSON", type=["json"])
+    
+    gc = None
+    if auth_file:
+        try:
+            creds_dict = json.load(auth_file)
+            creds = Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/spreadsheets"]
+            )
+            gc = gspread.authorize(creds)
+            st.success("✅ Authentication Successful!")
+            st.markdown(f"[📊 Open Google Sheet]({SHEET_URL})")
+        except Exception as e:
+            st.error(f"❌ Auth Error: {str(e)[:100]}...")
+    else:
+        st.info("⬆️ Upload your Google Service Account JSON")
+    
+    st.markdown("---")
+    
+    # ======= NAVIGATION =======
+    st.header("📋 Navigation")
+    view_mode = st.radio(
+        "Select View:",
+        ["📊 Dashboard", "📋 Data Management", "📈 Analytics", "⚙️ Settings"],
+        index=0
+    )
+    
+    if view_mode == "📋 Data Management":
+        selected_tab = st.selectbox(
+            "Select CRM Section:",
+            list(tabs_config.keys()),
+            format_func=lambda x: f"{tabs_config[x]['icon']} {x}"
         )
-        gc = gspread.authorize(creds)
-        st.sidebar.success("✅ Google Authentication Successful!")
-        st.sidebar.markdown(f"[Open Google Sheet]({SHEET_URL})")
-    except Exception as e:
-        st.sidebar.error(f"❌ Auth Error: {e}")
-else:
-    st.sidebar.info("⬆️ Upload your Google Service Account JSON to enable Sheets integration.")
+    
+    st.markdown("---")
+    st.caption("Built with ❤️ using Streamlit")
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Built with ❤️ using Streamlit + Google Sheets.")
-
-# ======= MAIN APP =======
-selected_tab = st.selectbox("Select CRM Section (Tab):", list(tabs_columns.keys()))
-expected_columns = tabs_columns[selected_tab]
-
-# ======= LOAD DATA FROM SHEET =======
-def load_gsheet_data():
+# ======= UTILITY FUNCTIONS =======
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_gsheet_data(tab_name):
+    """Load data from Google Sheets with caching"""
+    expected_columns = tabs_config[tab_name]["columns"]
+    
     if not gc:
         return pd.DataFrame(columns=expected_columns)
+    
     try:
         sh = gc.open_by_key(SHEET_ID)
         try:
-            worksheet = sh.worksheet(selected_tab)
+            worksheet = sh.worksheet(tab_name)
             data = worksheet.get_all_values()
             if len(data) > 1:
                 df = pd.DataFrame(data[1:], columns=data[0])
@@ -76,122 +200,840 @@ def load_gsheet_data():
                 df = pd.DataFrame(columns=expected_columns)
         except gspread.exceptions.WorksheetNotFound:
             df = pd.DataFrame(columns=expected_columns)
+        
         # Ensure all expected columns are present
         for col in expected_columns:
             if col not in df.columns:
                 df[col] = ""
+        
         df = df[expected_columns]
+        
+        # Clean and validate data
+        df = clean_dataframe(df)
+        
         return df
     except Exception as e:
         st.error(f"❌ Could not load Google Sheet: {e}")
         return pd.DataFrame(columns=expected_columns)
 
-# ======= SESSION STATE FOR DATAFRAME =======
-if "df" not in st.session_state or st.session_state.get("last_tab") != selected_tab:
-    st.session_state.df = load_gsheet_data()
-    st.session_state.last_tab = selected_tab
+def clean_dataframe(df):
+    """Clean and standardize dataframe data"""
+    df_clean = df.copy()
+    
+    # Clean email addresses
+    if 'email' in df_clean.columns:
+        df_clean['email'] = df_clean['email'].str.lower().str.strip()
+    
+    # Clean phone numbers
+    if 'phone' in df_clean.columns:
+        df_clean['phone'] = df_clean['phone'].str.replace(r'[^\d+\-$$$$\s]', '', regex=True)
+    
+    # Standardize names
+    name_columns = ['first_name', 'last_name', 'full_name']
+    for col in name_columns:
+        if col in df_clean.columns:
+            df_clean[col] = df_clean[col].str.title().str.strip()
+    
+    # Handle dates
+    if 'assessment_date' in df_clean.columns:
+        df_clean['assessment_date'] = pd.to_datetime(df_clean['assessment_date'], errors='coerce')
+    
+    return df_clean
 
-df = st.session_state.df
+def validate_data_quality(df):
+    """Analyze data quality and return metrics"""
+    if df.empty:
+        return {"overall_score": 0, "issues": [], "completeness": 0}
+    
+    issues = []
+    total_cells = df.size
+    empty_cells = df.isnull().sum().sum() + (df == "").sum().sum()
+    completeness = ((total_cells - empty_cells) / total_cells) * 100
+    
+    # Check for duplicate emails
+    if 'email' in df.columns:
+        email_duplicates = df['email'].duplicated().sum()
+        if email_duplicates > 0:
+            issues.append(f"🔄 {email_duplicates} duplicate email addresses")
+    
+    # Check for invalid emails
+    if 'email' in df.columns:
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        invalid_emails = df[df['email'] != '']['email'].apply(
+            lambda x: not re.match(email_pattern, str(x))
+        ).sum()
+        if invalid_emails > 0:
+            issues.append(f"📧 {invalid_emails} invalid email formats")
+    
+    # Check for missing critical fields
+    critical_fields = ['full_name', 'email']
+    for field in critical_fields:
+        if field in df.columns:
+            missing = df[field].isnull().sum() + (df[field] == "").sum()
+            if missing > 0:
+                issues.append(f"❗ {missing} missing {field} entries")
+    
+    # Calculate overall score
+    overall_score = max(0, completeness - len(issues) * 5)
+    
+    return {
+        "overall_score": overall_score,
+        "issues": issues,
+        "completeness": completeness,
+        "total_records": len(df),
+        "empty_cells": empty_cells
+    }
 
-# ======= CSV UPLOAD AND MERGE =======
-uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to append:", type=["csv"])
-if uploaded_file:
-    try:
-        new_df = pd.read_csv(uploaded_file)
-        for col in expected_columns:
-            if col not in new_df.columns:
-                new_df[col] = ""
-        new_df = new_df[expected_columns]
-        df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
-        st.session_state.df = df
-        st.success("✅ CSV uploaded and merged!")
-    except Exception as e:
-        st.error(f"❌ Error reading CSV: {e}")
+def create_summary_metrics(all_data):
+    """Create summary metrics across all tabs"""
+    total_records = sum(len(df) for df in all_data.values() if not df.empty)
+    
+    # Get unique clients across all tabs
+    unique_clients = set()
+    for df in all_data.values():
+        if not df.empty and 'full_name' in df.columns:
+            unique_clients.update(df['full_name'].dropna().unique())
+    
+    # Industry distribution from Basic Info
+    industries = []
+    if 'Basic Info' in all_data and not all_data['Basic Info'].empty:
+        industries = all_data['Basic Info']['industry'].value_counts().to_dict()
+    
+    # Recent assessments
+    recent_assessments = 0
+    if 'Basic Info' in all_data and not all_data['Basic Info'].empty:
+        df = all_data['Basic Info']
+        if 'assessment_date' in df.columns:
+            recent_date = datetime.datetime.now() - datetime.timedelta(days=30)
+            recent_assessments = len(df[pd.to_datetime(df['assessment_date'], errors='coerce') > recent_date])
+    
+    return {
+        "total_records": total_records,
+        "unique_clients": len(unique_clients),
+        "industries": industries,
+        "recent_assessments": recent_assessments
+    }
 
-# ======= FULL TABLE VIEW & SELECTION =======
-st.markdown("### 👀 Current Data")
-st.dataframe(df, use_container_width=True, height=500)
+# ======= MAIN APPLICATION LOGIC =======
 
-if not df.empty:
-    selected_idx = st.selectbox(
-        "Select a row to edit/delete:",
-        df.index,
-        format_func=lambda x: " | ".join(str(df.at[x, col]) for col in expected_columns[:2])
-    )
-else:
-    selected_idx = None
-
-# ======= EDIT/DELETE ROW =======
-st.markdown("### ✏️ Edit Selected Row")
-if selected_idx is not None and not df.empty:
-    edit_data = {}
-    cols = st.columns(len(expected_columns))
-    for idx, col in enumerate(expected_columns):
-        value = df.at[selected_idx, col]
-        if col == "assessment_date":
-            try:
-                value = pd.to_datetime(value).date()
-            except:
-                value = datetime.date.today()
-            edit_data[col] = cols[idx].date_input(col, value=value)
+if view_mode == "📊 Dashboard":
+    st.header("📊 CRM Dashboard")
+    
+    # Load all data for dashboard
+    all_data = {}
+    with st.spinner("Loading dashboard data..."):
+        for tab_name in tabs_config.keys():
+            all_data[tab_name] = load_gsheet_data(tab_name)
+    
+    # Summary metrics
+    metrics = create_summary_metrics(all_data)
+    
+    # Display key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="📊 Total Records",
+            value=metrics["total_records"],
+            delta=f"Across {len(tabs_config)} sections"
+        )
+    
+    with col2:
+        st.metric(
+            label="👥 Unique Clients",
+            value=metrics["unique_clients"],
+            delta="Individual profiles"
+        )
+    
+    with col3:
+        st.metric(
+            label="🏭 Industries",
+            value=len(metrics["industries"]),
+            delta="Different sectors"
+        )
+    
+    with col4:
+        st.metric(
+            label="📅 Recent Assessments",
+            value=metrics["recent_assessments"],
+            delta="Last 30 days"
+        )
+    
+    # Data distribution charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📋 Records by Section")
+        section_data = {name: len(df) for name, df in all_data.items() if not df.empty}
+        if section_data:
+            fig = px.bar(
+                x=list(section_data.keys()),
+                y=list(section_data.values()),
+                title="Records Distribution Across Sections",
+                color=list(section_data.values()),
+                color_continuous_scale="Greens"
+            )
+            fig.update_layout(showlegend=False, xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🏭 Industry Distribution")
+        if metrics["industries"]:
+            fig = px.pie(
+                values=list(metrics["industries"].values()),
+                names=list(metrics["industries"].keys()),
+                title="Client Distribution by Industry"
+            )
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            edit_data[col] = cols[idx].text_input(col, value=value)
-    if st.button("💾 Save Edit"):
-        for col in expected_columns:
-            df.at[selected_idx, col] = edit_data[col]
-        st.session_state.df = df
-        st.success("Row updated! (Don't forget to sync with Google Sheets below)")
+            st.info("No industry data available")
+    
+    # Data quality overview
+    st.subheader("🔍 Data Quality Overview")
+    quality_cols = st.columns(len(tabs_config))
+    
+    for idx, (tab_name, df) in enumerate(all_data.items()):
+        with quality_cols[idx % len(quality_cols)]:
+            quality = validate_data_quality(df)
+            score = quality["overall_score"]
+            
+            if score >= 80:
+                color = "data-quality-good"
+                icon = "✅"
+            elif score >= 60:
+                color = "data-quality-warning"
+                icon = "⚠️"
+            else:
+                color = "data-quality-error"
+                icon = "❌"
+            
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>{icon} {tab_name}</h4>
+                <p class="{color}">Quality Score: {score:.1f}%</p>
+                <p>Records: {quality['total_records']}</p>
+                <p>Completeness: {quality['completeness']:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-    if st.button("🗑️ Delete Row"):
-        df = df.drop(index=selected_idx).reset_index(drop=True)
-        st.session_state.df = df
-        st.warning("Row deleted! (Don't forget to sync with Google Sheets below)")
-
-# ======= ADD NEW ENTRY =======
-st.markdown("### ➕ Add New Entry")
-with st.form("add_entry_form"):
-    new_data = {}
-    cols = st.columns(len(expected_columns))
-    for idx, col in enumerate(expected_columns):
-        if col == "assessment_date":
-            new_data[col] = cols[idx].date_input(col, value=datetime.date.today())
+elif view_mode == "📋 Data Management":
+    # Get tab configuration
+    tab_config = tabs_config[selected_tab]
+    expected_columns = tab_config["columns"]
+    
+    # Display tab information
+    st.markdown(f"""
+    <div class="tab-description">
+        <h3>{tab_config['icon']} {selected_tab}</h3>
+        <p>{tab_config['description']}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Load data
+    if "df" not in st.session_state or st.session_state.get("last_tab") != selected_tab:
+        with st.spinner(f"Loading {selected_tab} data..."):
+            st.session_state.df = load_gsheet_data(selected_tab)
+            st.session_state.last_tab = selected_tab
+    
+    df = st.session_state.df
+    
+    # Data quality check
+    quality = validate_data_quality(df)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Total Records", len(df))
+    with col2:
+        st.metric("✅ Data Quality", f"{quality['overall_score']:.1f}%")
+    with col3:
+        st.metric("📈 Completeness", f"{quality['completeness']:.1f}%")
+    
+    # Display data quality issues
+    if quality["issues"]:
+        with st.expander("⚠️ Data Quality Issues", expanded=False):
+            for issue in quality["issues"]:
+                st.warning(issue)
+    
+    # ======= ENHANCED FILTERING =======
+    st.subheader("🔍 Advanced Filtering")
+    
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    
+    with filter_col1:
+        # Text search
+        search_term = st.text_input("🔎 Search all fields:", placeholder="Enter search term...")
+    
+    with filter_col2:
+        # Column filter
+        if not df.empty:
+            filter_column = st.selectbox("📋 Filter by column:", ["All"] + expected_columns)
         else:
-            new_data[col] = cols[idx].text_input(col, placeholder=f"Enter {col}")
-    submitted = st.form_submit_button("Add Entry")
-    if submitted:
-        df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True).drop_duplicates()
-        st.session_state.df = df
-        st.success("✅ New entry added! (Don't forget to sync with Google Sheets below)")
-
-# ======= DOWNLOAD CSV =======
-csv_data = df.to_csv(index=False)
-st.download_button(
-    label=f"📥 Download {selected_tab} CSV",
-    data=csv_data,
-    file_name=f"{selected_tab.lower().replace(' ','_')}.csv",
-    mime='text/csv'
-)
-
-# ======= SYNC TO GOOGLE SHEETS =======
-def sync_to_gsheet(df):
-    if not gc:
-        st.error("Google authentication required.")
-        return
-    try:
-        sh = gc.open_by_key(SHEET_ID)
+            filter_column = "All"
+    
+    with filter_col3:
+        # Date range filter (if applicable)
+        if 'assessment_date' in expected_columns and not df.empty:
+            date_filter = st.checkbox("📅 Filter by date range")
+            if date_filter:
+                start_date = st.date_input("Start date", datetime.date.today() - datetime.timedelta(days=365))
+                end_date = st.date_input("End date", datetime.date.today())
+    
+    # Apply filters
+    filtered_df = df.copy()
+    
+    if search_term and not df.empty:
+        mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
+        filtered_df = df[mask]
+    
+    if filter_column != "All" and not df.empty:
+        unique_values = df[filter_column].unique()
+        selected_values = st.multiselect(f"Select {filter_column} values:", unique_values)
+        if selected_values:
+            filtered_df = filtered_df[filtered_df[filter_column].isin(selected_values)]
+    
+    # ======= CSV UPLOAD AND MERGE =======
+    st.subheader("📤 Data Import")
+    uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to merge:", type=["csv"])
+    
+    if uploaded_file:
         try:
-            worksheet = sh.worksheet(selected_tab)
-            sh.del_worksheet(worksheet)
-            worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
-        except gspread.exceptions.WorksheetNotFound:
-            worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
-        worksheet.update([expected_columns] + df.fillna("").astype(str).values.tolist())
-        st.success(f"✅ Google Sheet '{selected_tab}' updated!")
-        st.info(f"[Open your Google Sheet]({SHEET_URL})")
-    except Exception as e:
-        st.error(f"❌ Google Sheets error: {e}")
+            new_df = pd.read_csv(uploaded_file)
+            
+            # Validate columns
+            missing_cols = set(expected_columns) - set(new_df.columns)
+            if missing_cols:
+                st.warning(f"Missing columns in uploaded file: {missing_cols}")
+                for col in missing_cols:
+                    new_df[col] = ""
+            
+            new_df = new_df[expected_columns]
+            new_df = clean_dataframe(new_df)
+            
+            # Preview before merge
+            st.write("📋 Preview of uploaded data:")
+            st.dataframe(new_df.head(), use_container_width=True)
+            
+            if st.button("✅ Confirm Merge"):
+                original_count = len(df)
+                df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
+                new_count = len(df)
+                st.session_state.df = df
+                st.success(f"✅ Merged! Added {new_count - original_count} new records.")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"❌ Error reading CSV: {e}")
+    
+    # ======= ENHANCED DATA DISPLAY =======
+    st.subheader("📊 Data Table")
+    
+    if not filtered_df.empty:
+        # Pagination
+        page_size = st.selectbox("Records per page:", [10, 25, 50, 100], index=1)
+        total_pages = (len(filtered_df) - 1) // page_size + 1
+        
+        if total_pages > 1:
+            page = st.selectbox("Page:", range(1, total_pages + 1))
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            display_df = filtered_df.iloc[start_idx:end_idx]
+        else:
+            display_df = filtered_df
+        
+        # Display with enhanced formatting
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            height=400,
+            column_config={
+                col: st.column_config.TextColumn(
+                    col.replace('_', ' ').title(),
+                    width="medium"
+                ) for col in expected_columns
+            }
+        )
+        
+        st.caption(f"Showing {len(display_df)} of {len(filtered_df)} records")
+        
+        # Row selection for editing
+        if not display_df.empty:
+            selected_idx = st.selectbox(
+                "Select row to edit/delete:",
+                display_df.index,
+                format_func=lambda x: f"Row {x}: {' | '.join(str(display_df.at[x, col])[:20] for col in expected_columns[:2])}"
+            )
+        else:
+            selected_idx = None
+    else:
+        st.info("No data to display. Upload a CSV file or add entries manually.")
+        selected_idx = None
+    
+    # ======= ENHANCED EDIT/DELETE =======
+    if selected_idx is not None and not df.empty:
+        st.subheader("✏️ Edit Selected Record")
+        
+        with st.form("edit_form"):
+            edit_data = {}
+            
+            # Create dynamic form based on column types
+            for col in expected_columns:
+                value = df.at[selected_idx, col]
+                
+                if col == "assessment_date":
+                    try:
+                        value = pd.to_datetime(value).date() if pd.notna(value) else datetime.date.today()
+                    except:
+                        value = datetime.date.today()
+                    edit_data[col] = st.date_input(col.replace('_', ' ').title(), value=value)
+                
+                elif col in ['email']:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value),
+                        help="Enter a valid email address"
+                    )
+                
+                elif col in ['phone']:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value),
+                        help="Enter phone number with country code"
+                    )
+                
+                else:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value)
+                    )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.form_submit_button("💾 Save Changes", type="primary"):
+                    # Validate data before saving
+                    valid = True
+                    
+                    if 'email' in edit_data and edit_data['email']:
+                        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                        if not re.match(email_pattern, edit_data['email']):
+                            st.error("❌ Invalid email format")
+                            valid = False
+                    
+                    if valid:
+                        for col in expected_columns:
+                            df.at[selected_idx, col] = edit_data[col]
+                        st.session_state.df = df
+                        st.success("✅ Record updated successfully!")
+                        st.rerun()
+            
+            with col2:
+                if st.form_submit_button("🗑️ Delete Record", type="secondary"):
+                    df = df.drop(index=selected_idx).reset_index(drop=True)
+                    st.session_state.df = df
+                    st.success("✅ Record deleted successfully!")
+                    st.rerun()
+    
+    # ======= ENHANCED ADD NEW ENTRY =======
+    st.subheader("➕ Add New Record")
+    
+    with st.form("add_entry_form"):
+        new_data = {}
+        
+        # Create columns for better layout
+        form_cols = st.columns(min(3, len(expected_columns)))
+        
+        for idx, col in enumerate(expected_columns):
+            col_idx = idx % len(form_cols)
+            
+            with form_cols[col_idx]:
+                if col == "assessment_date":
+                    new_data[col] = st.date_input(
+                        col.replace('_', ' ').title(),
+                        value=datetime.date.today()
+                    )
+                elif col == "email":
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder="user@example.com",
+                        help="Enter a valid email address"
+                    )
+                elif col == "phone":
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder="+1-234-567-8900",
+                        help="Include country code"
+                    )
+                else:
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder=f"Enter {col.replace('_', ' ')}"
+                    )
+        
+        if st.form_submit_button("➕ Add New Record", type="primary"):
+            # Validate before adding
+            valid = True
+            
+            if new_data.get('email'):
+                email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                if not re.match(email_pattern, new_data['email']):
+                    st.error("❌ Invalid email format")
+                    valid = False
+            
+            if valid:
+                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                df = df.drop_duplicates()
+                st.session_state.df = df
+                st.success("✅ New record added successfully!")
+                st.rerun()
+    
+    # ======= ENHANCED EXPORT OPTIONS =======
+    st.subheader("📥 Export Data")
+    
+    export_col1, export_col2, export_col3 = st.columns(3)
+    
+    with export_col1:
+        # CSV Export
+        csv_data = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download as CSV",
+            data=csv_data,
+            file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.csv",
+            mime='text/csv'
+        )
+    
+    with export_col2:
+        # Excel Export
+        if not filtered_df.empty:
+            excel_buffer = pd.ExcelWriter('temp.xlsx', engine='openpyxl')
+            filtered_df.to_excel(excel_buffer, index=False, sheet_name=selected_tab)
+            excel_buffer.close()
+            
+            with open('temp.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📊 Download as Excel",
+                    data=f.read(),
+                    file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.xlsx",
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+    
+    with export_col3:
+        # JSON Export
+        json_data = filtered_df.to_json(orient='records', indent=2)
+        st.download_button(
+            label="🔗 Download as JSON",
+            data=json_data,
+            file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.json",
+            mime='application/json'
+        )
+    
+    # ======= GOOGLE SHEETS SYNC =======
+    st.subheader("🔄 Sync with Google Sheets")
+    
+    def sync_to_gsheet(df, tab_name):
+        if not gc:
+            st.error("❌ Google authentication required.")
+            return False
+        
+        try:
+            sh = gc.open_by_key(SHEET_ID)
+            
+            # Remove existing worksheet and create new one
+            try:
+                worksheet = sh.worksheet(tab_name)
+                sh.del_worksheet(worksheet)
+            except gspread.exceptions.WorksheetNotFound:
+                pass
+            
+            worksheet = sh.add_worksheet(title=tab_name, rows="1000", cols="50")
+            
+            # Prepare data for upload
+            upload_data = [expected_columns] + df.fillna("").astype(str).values.tolist()
+            worksheet.update(upload_data)
+            
+            st.success(f"✅ '{tab_name}' synced successfully!")
+            st.info(f"[📊 View in Google Sheets]({SHEET_URL})")
+            return True
+            
+        except Exception as e:
+            st.error(f"❌ Sync failed: {e}")
+            return False
+    
+    sync_col1, sync_col2 = st.columns(2)
+    
+    with sync_col1:
+        if st.button("🚀 Sync Current Tab", type="primary"):
+            with st.spinner("Syncing to Google Sheets..."):
+                sync_to_gsheet(df, selected_tab)
+    
+    with sync_col2:
+        if st.button("🔄 Refresh from Sheets"):
+            with st.spinner("Refreshing data..."):
+                st.session_state.df = load_gsheet_data(selected_tab)
+                st.success("✅ Data refreshed from Google Sheets!")
+                st.rerun()
 
-if st.button("🚀 Sync ALL Changes to Google Sheets (Overwrite Tab)"):
-    sync_to_gsheet(df)
+elif view_mode == "📈 Analytics":
+    st.header("📈 Advanced Analytics")
+    
+    # Load all data for analytics
+    all_data = {}
+    with st.spinner("Loading analytics data..."):
+        for tab_name in tabs_config.keys():
+            all_data[tab_name] = load_gsheet_data(tab_name)
+    
+    # Analytics tabs
+    analytics_tab = st.selectbox(
+        "Select Analytics View:",
+        ["📊 Overview", "👥 Client Analysis", "📅 Temporal Analysis", "🔍 Data Insights"]
+    )
+    
+    if analytics_tab == "📊 Overview":
+        st.subheader("📊 System Overview")
+        
+        # Create comprehensive metrics
+        total_clients = 0
+        total_assessments = 0
+        active_sections = 0
+        
+        for name, df in all_data.items():
+            if not df.empty:
+                active_sections += 1
+                if 'full_name' in df.columns:
+                    total_clients += len(df['full_name'].dropna().unique())
+                total_assessments += len(df)
+        
+        # Display overview metrics
+        metric_cols = st.columns(4)
+        
+        with metric_cols[0]:
+            st.metric("🎯 Active Sections", active_sections, f"of {len(tabs_config)}")
+        
+        with metric_cols[1]:
+            st.metric("👥 Total Clients", total_clients)
+        
+        with metric_cols[2]:
+            st.metric("📋 Total Records", total_assessments)
+        
+        with metric_cols[3]:
+            avg_records = total_assessments / max(active_sections, 1)
+            st.metric("📊 Avg Records/Section", f"{avg_records:.1f}")
+        
+        # Section activity heatmap
+        st.subheader("🔥 Section Activity Heatmap")
+        
+        activity_data = []
+        for name, df in all_data.items():
+            quality = validate_data_quality(df)
+            activity_data.append({
+                'Section': name,
+                'Records': len(df),
+                'Quality Score': quality['overall_score'],
+                'Completeness': quality['completeness']
+            })
+        
+        activity_df = pd.DataFrame(activity_data)
+        
+        if not activity_df.empty:
+            fig = px.scatter(
+                activity_df,
+                x='Records',
+                y='Quality Score',
+                size='Completeness',
+                color='Completeness',
+                hover_name='Section',
+                title="Section Performance Matrix",
+                labels={'Quality Score': 'Data Quality (%)', 'Records': 'Number of Records'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    elif analytics_tab == "👥 Client Analysis":
+        st.subheader("👥 Client Demographics Analysis")
+        
+        basic_info = all_data.get('Basic Info', pd.DataFrame())
+        
+        if not basic_info.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Industry distribution
+                if 'industry' in basic_info.columns:
+                    industry_counts = basic_info['industry'].value_counts()
+                    if not industry_counts.empty:
+                        fig = px.pie(
+                            values=industry_counts.values,
+                            names=industry_counts.index,
+                            title="Client Distribution by Industry"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Company size distribution
+                if 'company_size' in basic_info.columns:
+                    size_counts = basic_info['company_size'].value_counts()
+                    if not size_counts.empty:
+                        fig = px.bar(
+                            x=size_counts.index,
+                            y=size_counts.values,
+                            title="Distribution by Company Size",
+                            labels={'x': 'Company Size', 'y': 'Count'}
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            # Geographic analysis
+            contact_info = all_data.get('Contact Info', pd.DataFrame())
+            if not contact_info.empty and 'state' in contact_info.columns:
+                st.subheader("🗺️ Geographic Distribution")
+                state_counts = contact_info['state'].value_counts().head(10)
+                
+                fig = px.bar(
+                    x=state_counts.values,
+                    y=state_counts.index,
+                    orientation='h',
+                    title="Top 10 States by Client Count",
+                    labels={'x': 'Number of Clients', 'y': 'State'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        else:
+            st.info("No client data available for analysis")
+    
+    elif analytics_tab == "📅 Temporal Analysis":
+        st.subheader("📅 Time-based Analysis")
+        
+        basic_info = all_data.get('Basic Info', pd.DataFrame())
+        
+        if not basic_info.empty and 'assessment_date' in basic_info.columns:
+            # Convert dates
+            basic_info['assessment_date'] = pd.to_datetime(basic_info['assessment_date'], errors='coerce')
+            valid_dates = basic_info.dropna(subset=['assessment_date'])
+            
+            if not valid_dates.empty:
+                # Monthly trend
+                monthly_counts = valid_dates.groupby(valid_dates['assessment_date'].dt.to_period('M')).size()
+                
+                fig = px.line(
+                    x=monthly_counts.index.astype(str),
+                    y=monthly_counts.values,
+                    title="Assessment Trends Over Time",
+                    labels={'x': 'Month', 'y': 'Number of Assessments'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Day of week analysis
+                valid_dates['day_of_week'] = valid_dates['assessment_date'].dt.day_name()
+                dow_counts = valid_dates['day_of_week'].value_counts()
+                
+                fig = px.bar(
+                    x=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+                    y=[dow_counts.get(day, 0) for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']],
+                    title="Assessments by Day of Week",
+                    labels={'x': 'Day of Week', 'y': 'Count'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No date data available for temporal analysis")
+    
+    elif analytics_tab == "🔍 Data Insights":
+        st.subheader("🔍 Advanced Data Insights")
+        
+        # Data completeness analysis
+        completeness_data = []
+        for name, df in all_data.items():
+            if not df.empty:
+                for col in df.columns:
+                    non_empty = df[col].notna().sum() + (df[col] != "").sum()
+                    completeness = (non_empty / len(df)) * 100
+                    completeness_data.append({
+                        'Section': name,
+                        'Field': col,
+                        'Completeness': completeness,
+                        'Records': len(df)
+                    })
+        
+        if completeness_data:
+            completeness_df = pd.DataFrame(completeness_data)
+            
+            # Heatmap of field completeness
+            pivot_df = completeness_df.pivot(index='Section', columns='Field', values='Completeness')
+            
+            fig = px.imshow(
+                pivot_df.values,
+                x=pivot_df.columns,
+                y=pivot_df.index,
+                color_continuous_scale='RdYlGn',
+                title="Field Completeness Heatmap (%)",
+                aspect='auto'
+            )
+            fig.update_layout(height=600)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Top incomplete fields
+            st.subheader("⚠️ Fields Needing Attention")
+            incomplete_fields = completeness_df[completeness_df['Completeness'] < 80].sort_values('Completeness')
+            
+            if not incomplete_fields.empty:
+                fig = px.bar(
+                    incomplete_fields.head(10),
+                    x='Completeness',
+                    y='Field',
+                    color='Section',
+                    orientation='h',
+                    title="Top 10 Incomplete Fields",
+                    labels={'Completeness': 'Completeness (%)', 'Field': 'Field Name'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.success("🎉 All fields have good completeness (>80%)!")
 
-st.caption("✅ View, add, edit, select, and sync your CRM data. Built with ❤️ using Streamlit + Google Sheets.")
+elif view_mode == "⚙️ Settings":
+    st.header("⚙️ System Settings")
+    
+    # Configuration settings
+    st.subheader("📋 Tab Configuration")
+    
+    for tab_name, config in tabs_config.items():
+        with st.expander(f"{config['icon']} {tab_name}"):
+            st.write(f"**Description:** {config['description']}")
+            st.write(f"**Columns:** {len(config['columns'])}")
+            st.code(", ".join(config['columns']))
+    
+    # System information
+    st.subheader("ℹ️ System Information")
+    
+    info_col1, info_col2 = st.columns(2)
+    
+    with info_col1:
+        st.info(f"""
+        **Google Sheet ID:** `{SHEET_ID}`
+        **Total Sections:** {len(tabs_config)}
+        **Authentication:** {'✅ Connected' if gc else '❌ Not Connected'}
+        """)
+    
+    with info_col2:
+        st.info(f"""
+        **Cache TTL:** 5 minutes
+        **Page Size Options:** 10, 25, 50, 100
+        **Export Formats:** CSV, Excel, JSON
+        """)
+    
+    # Data management tools
+    st.subheader("🛠️ Data Management Tools")
+    
+    if st.button("🔄 Clear All Cache"):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared successfully!")
+    
+    if st.button("📊 Regenerate Dashboard"):
+        if 'df' in st.session_state:
+            del st.session_state.df
+        st.success("✅ Dashboard will regenerate on next view!")
+
+# ======= FOOTER =======
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666; padding: 2rem;'>
+    <p><strong>Enhanced CRM Client Profiles Manager</strong></p>
+    <p>🚀 Advanced Analytics • 📊 Data Insights • 🔄 Real-time Sync</p>
+    <p>Built with ❤️ using Streamlit + Google Sheets + Plotly</p>
+</div>
+""", unsafe_allow_html=True)
