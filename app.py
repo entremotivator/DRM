@@ -5,7 +5,9 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
+# =======================
 # ✅ Set Streamlit Page Theme
+# =======================
 st.set_page_config(
     page_title="CRM Client Profiles Manager",
     layout="wide",
@@ -15,7 +17,6 @@ st.set_page_config(
 # =======================
 # 🎨 Custom Styling Section
 # =======================
-
 st.markdown(
     """
     <style>
@@ -56,7 +57,6 @@ st.markdown(
 # ========================
 st.sidebar.header("🔧 App Configuration")
 
-# 🎨 Theme switcher in sidebar
 theme_choice = st.sidebar.radio(
     "Choose App Theme",
     ("Light 🌞", "Dark 🌜"),
@@ -74,7 +74,6 @@ if theme_choice == "Dark 🌜":
         unsafe_allow_html=True
     )
 
-# 📌 Default Sheet ID prefilled
 DEFAULT_SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
 
 st.sidebar.markdown("#### 1️⃣ Upload Google Service Account JSON")
@@ -185,7 +184,7 @@ if gc and sheet_id:
     st.markdown(f"<div class='section-header'>📡 Append New Entries to Google Sheet → **{selected_tab} Tab**</div>", unsafe_allow_html=True)
     st.markdown(
         """
-        ✅ This will append all rows in the current table to your Google Sheet tab.  
+        ✅ This will append only new rows in the current table to your Google Sheet tab.  
         ✅ If the tab doesn't exist, it will be created automatically.  
         """
     )
@@ -196,12 +195,31 @@ if gc and sheet_id:
                 worksheet = sh.worksheet(selected_tab)
             except gspread.exceptions.WorksheetNotFound:
                 worksheet = sh.add_worksheet(title=selected_tab, rows="1000", cols="50")
-                worksheet.append_row(expected_columns)
+                worksheet.append_row(expected_columns)  # Write headers
 
-            for _, row in df.iterrows():
-                worksheet.append_row([str(row.get(col, "")) for col in expected_columns])
+            # Get current records in the sheet (excluding header)
+            existing_records = worksheet.get_all_values()
+            if len(existing_records) > 1:
+                existing_data = pd.DataFrame(existing_records[1:], columns=existing_records[0])
+            else:
+                existing_data = pd.DataFrame(columns=expected_columns)
 
-            st.success(f"✅ Data appended to Google Sheet tab: {selected_tab}!")
+            # Find new rows to append (those not already in sheet)
+            if not df.empty:
+                # Standardize columns for comparison
+                for col in expected_columns:
+                    if col not in df.columns:
+                        df[col] = ""
+                df = df[expected_columns]
+                new_rows = df[~df.apply(tuple, 1).isin(existing_data.apply(tuple, 1))]
+                if new_rows.empty:
+                    st.info("No new data to append. All rows already exist in the sheet.")
+                else:
+                    for _, row in new_rows.iterrows():
+                        worksheet.append_row([str(row.get(col, "")) for col in expected_columns])
+                    st.success(f"✅ {len(new_rows)} new row(s) appended to Google Sheet tab: {selected_tab}!")
+            else:
+                st.warning("⚠️ No data to append. Please add or upload data first.")
         except Exception as e:
             st.error(f"❌ Google Sheets error: {e}")
 else:
