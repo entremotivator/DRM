@@ -3,172 +3,128 @@ import pandas as pd
 import datetime
 import gspread
 import json
+import plotly.express as px
+import plotly.graph_objects as go
 from google.oauth2.service_account import Credentials
-import time
+import numpy as np
+from collections import Counter
+import re
 
-# ======= CONFIGURATION =======
+# ======= ENHANCED CONFIGURATION =======
 SHEET_ID = "188i0tHyaEH_0hkSXfdMXoP1c3quEp54EAyuqmMUgHN0"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit"
 
-# All client fields as specified
-CLIENT_FIELDS = [
-    "first_name",
-    "last_name", 
-    "full_name",
-    "email",
-    "timezone",
-    "address_line_1",
-    "address_line_2",
-    "city",
-    "state",
-    "postal_code",
-    "country",
-    "ip",
-    "phone",
-    "source",
-    "date_of_birth",
-    "company_id",
-    "discprofile",
-    "discsales",
-    "disc_communiction",
-    "leadership_style",
-    "team_dynamics",
-    "conflict_resolution",
-    "customer_service_approach",
-    "decision_making_style",
-    "workplace_behavior",
-    "hiring_and_recruitment",
-    "_coaching_and_development"
-]
-
-# Field categories for better organization
-FIELD_CATEGORIES = {
-    "👤 Personal Information": [
-        "first_name", "last_name", "full_name", "email", "phone", 
-        "date_of_birth", "timezone", "ip", "source"
-    ],
-    "📍 Address Information": [
-        "address_line_1", "address_line_2", "city", "state", 
-        "postal_code", "country"
-    ],
-    "🏢 Company Information": [
-        "company_id"
-    ],
-    "🧠 DISC Profiles": [
-        "discprofile", "discsales", "disc_communiction", "leadership_style",
-        "team_dynamics", "conflict_resolution", "customer_service_approach",
-        "decision_making_style", "workplace_behavior"
-    ],
-    "📚 HR & Development": [
-        "hiring_and_recruitment", "_coaching_and_development"
-    ]
+# Enhanced tabs configuration with descriptions
+tabs_config = {
+    "Basic Info": {
+        "columns": [
+            "first_name", "last_name", "full_name", "email", "phone", "company_id",
+            "industry", "position", "company_size", "website", "source", "assessment_date"
+        ],
+        "description": "Core client information and contact details",
+        "icon": "👤"
+    },
+    "Contact Info": {
+        "columns": ["full_name", "address_line_1", "city", "state", "postal_code", "country"],
+        "description": "Physical addresses and location data",
+        "icon": "📍"
+    },
+    "DISC General Profile": {
+        "columns": ["full_name", "discprofile"],
+        "description": "General DISC personality assessments",
+        "icon": "🧠"
+    },
+    "DISC Sales Profile": {
+        "columns": ["full_name", "discsales"],
+        "description": "Sales-focused DISC analysis",
+        "icon": "💼"
+    },
+    "DISC Communication Style": {
+        "columns": ["full_name", "disc_communiction"],
+        "description": "Communication preferences and styles",
+        "icon": "💬"
+    },
+    "DISC Leadership Style": {
+        "columns": ["full_name", "leadership_style"],
+        "description": "Leadership approach and management style",
+        "icon": "👑"
+    },
+    "DISC Team Dynamics": {
+        "columns": ["full_name", "team_dynamics"],
+        "description": "Team collaboration and interaction patterns",
+        "icon": "👥"
+    },
+    "DISC Conflict Resolution": {
+        "columns": ["full_name", "conflict_resolution"],
+        "description": "Conflict handling and resolution approaches",
+        "icon": "⚖️"
+    },
+    "DISC Customer Service Approach": {
+        "columns": ["full_name", "customer_service_approach"],
+        "description": "Customer service and client interaction styles",
+        "icon": "🤝"
+    },
+    "DISC Decision-Making Style": {
+        "columns": ["full_name", "decision_making_style"],
+        "description": "Decision-making processes and preferences",
+        "icon": "🎯"
+    },
+    "DISC Workplace Behavior": {
+        "columns": ["full_name", "workplace_behavior"],
+        "description": "Professional behavior and work environment preferences",
+        "icon": "🏢"
+    },
+    "HR & Coaching": {
+        "columns": [
+            "full_name", "hiring_and_recruitment", "_coaching_and_development",
+            "career_goals", "stress_management", "learning_style"
+        ],
+        "description": "Human resources and professional development data",
+        "icon": "📚"
+    }
 }
 
 # ======= PAGE CONFIGURATION =======
 st.set_page_config(
-    page_title="Live CRM Client Profiles", 
+    page_title="Enhanced CRM Manager", 
     layout="wide", 
-    page_icon="👥",
+    page_icon="📊",
     initial_sidebar_state="expanded"
 )
 
-# ======= CUSTOM CSS =======
+# ======= CUSTOM CSS STYLING =======
 st.markdown("""
 <style>
     .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(90deg, #4CAF50, #45a049);
         padding: 2rem;
-        border-radius: 15px;
-        margin-bottom: 2rem;
-        text-align: center;
-        color: white;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-    }
-    
-    .client-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        border-left: 5px solid #667eea;
-        margin: 1rem 0;
-        transition: transform 0.2s ease;
-    }
-    
-    .client-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    }
-    
-    .profile-header {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 2rem;
-        border-radius: 15px;
-        color: white;
-        margin-bottom: 2rem;
-        text-align: center;
-    }
-    
-    .field-section {
-        background: #f8f9fa;
-        padding: 1.5rem;
         border-radius: 10px;
-        margin: 1rem 0;
-        border-left: 4px solid #667eea;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: white;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     }
-    
-    .field-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.5rem 0;
-        border-bottom: 1px solid #e9ecef;
-    }
-    
-    .field-label {
-        font-weight: 600;
-        color: #495057;
-        min-width: 200px;
-    }
-    
-    .field-value {
-        color: #212529;
-        flex: 1;
-        text-align: right;
-    }
-    
-    .empty-value {
-        color: #6c757d;
-        font-style: italic;
-    }
-    
-    .status-indicator {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
-    
-    .status-online { background-color: #28a745; }
-    .status-offline { background-color: #dc3545; }
-    .status-partial { background-color: #ffc107; }
-    
     .metric-card {
         background: white;
         padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-        text-align: center;
-        border-top: 4px solid #667eea;
-    }
-    
-    .search-container {
-        background: white;
-        padding: 1rem;
         border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #4CAF50;
+        margin: 1rem 0;
+    }
+    .tab-description {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #4CAF50;
+        margin: 1rem 0;
+    }
+    .data-quality-good { color: #4CAF50; font-weight: bold; }
+    .data-quality-warning { color: #FF9800; font-weight: bold; }
+    .data-quality-error { color: #f44336; font-weight: bold; }
+    .stDataFrame {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -176,9 +132,9 @@ st.markdown("""
 # ======= HEADER =======
 st.markdown("""
 <div class="main-header">
-    <h1 style='font-size:3em; margin:0;'>👥 Live CRM Client Profiles</h1>
+    <h1 style='font-size:3em; margin:0;'>📊 Enhanced CRM Client Profiles Manager</h1>
     <p style='font-size:1.2em; margin:0.5rem 0 0 0; opacity:0.9;'>
-        Real-time Google Sheets Integration • Individual Client Profiles
+        Advanced Analytics • Data Insights • Professional Management
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -197,8 +153,8 @@ with st.sidebar:
                 scopes=["https://www.googleapis.com/auth/spreadsheets"]
             )
             gc = gspread.authorize(creds)
-            st.success("✅ Connected to Google Sheets!")
-            st.markdown(f"[📊 Open Sheet]({SHEET_URL})")
+            st.success("✅ Authentication Successful!")
+            st.markdown(f"[📊 Open Google Sheet]({SHEET_URL})")
         except Exception as e:
             st.error(f"❌ Auth Error: {str(e)[:100]}...")
     else:
@@ -206,377 +162,878 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Auto-refresh settings
-    st.header("🔄 Live Updates")
-    auto_refresh = st.checkbox("Enable Auto-refresh", value=True)
-    if auto_refresh:
-        refresh_interval = st.selectbox(
-            "Refresh Interval:",
-            [30, 60, 120, 300],
-            index=1,
-            format_func=lambda x: f"{x} seconds"
-        )
+    # ======= NAVIGATION =======
+    st.header("📋 Navigation")
+    view_mode = st.radio(
+        "Select View:",
+        ["📊 Dashboard", "📋 Data Management", "📈 Analytics", "⚙️ Settings"],
+        index=0
+    )
     
-    # Manual refresh button
-    if st.button("🔄 Refresh Now"):
-        st.cache_data.clear()
-        st.rerun()
+    if view_mode == "📋 Data Management":
+        selected_tab = st.selectbox(
+            "Select CRM Section:",
+            list(tabs_config.keys()),
+            format_func=lambda x: f"{tabs_config[x]['icon']} {x}"
+        )
     
     st.markdown("---")
     st.caption("Built with ❤️ using Streamlit")
 
 # ======= UTILITY FUNCTIONS =======
-@st.cache_data(ttl=60)  # Cache for 1 minute for live updates
-def load_live_client_data():
-    """Load live client data from Google Sheets"""
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_gsheet_data(tab_name):
+    """Load data from Google Sheets with caching"""
+    expected_columns = tabs_config[tab_name]["columns"]
+    
     if not gc:
-        return pd.DataFrame(columns=CLIENT_FIELDS)
+        return pd.DataFrame(columns=expected_columns)
     
     try:
         sh = gc.open_by_key(SHEET_ID)
-        
-        # Try to find a worksheet with client data
-        worksheet_names = ["Clients", "Client Data", "Sheet1", "Main"]
-        worksheet = None
-        
-        for name in worksheet_names:
-            try:
-                worksheet = sh.worksheet(name)
-                break
-            except gspread.exceptions.WorksheetNotFound:
-                continue
-        
-        if not worksheet:
-            # Use the first available worksheet
-            worksheets = sh.worksheets()
-            if worksheets:
-                worksheet = worksheets[0]
+        try:
+            worksheet = sh.worksheet(tab_name)
+            data = worksheet.get_all_values()
+            if len(data) > 1:
+                df = pd.DataFrame(data[1:], columns=data[0])
             else:
-                return pd.DataFrame(columns=CLIENT_FIELDS)
-        
-        # Get all data
-        data = worksheet.get_all_values()
-        
-        if len(data) > 1:
-            df = pd.DataFrame(data[1:], columns=data[0])
-        else:
-            df = pd.DataFrame(columns=CLIENT_FIELDS)
+                df = pd.DataFrame(columns=expected_columns)
+        except gspread.exceptions.WorksheetNotFound:
+            df = pd.DataFrame(columns=expected_columns)
         
         # Ensure all expected columns are present
-        for col in CLIENT_FIELDS:
+        for col in expected_columns:
             if col not in df.columns:
                 df[col] = ""
         
-        # Keep only the fields we want and clean data
-        df = df[CLIENT_FIELDS].copy()
+        df = df[expected_columns]
         
-        # Clean and format data
-        df = clean_client_data(df)
+        # Clean and validate data
+        df = clean_dataframe(df)
         
         return df
-        
     except Exception as e:
-        st.error(f"❌ Error loading data: {e}")
-        return pd.DataFrame(columns=CLIENT_FIELDS)
+        st.error(f"❌ Could not load Google Sheet: {e}")
+        return pd.DataFrame(columns=expected_columns)
 
-def clean_client_data(df):
-    """Clean and format client data"""
-    if df.empty:
-        return df
-    
+def clean_dataframe(df):
+    """Clean and standardize dataframe data"""
     df_clean = df.copy()
     
     # Clean email addresses
     if 'email' in df_clean.columns:
-        df_clean['email'] = df_clean['email'].astype(str).str.lower().str.strip()
+        df_clean['email'] = df_clean['email'].str.lower().str.strip()
     
     # Clean phone numbers
     if 'phone' in df_clean.columns:
-        df_clean['phone'] = df_clean['phone'].astype(str).str.strip()
+        df_clean['phone'] = df_clean['phone'].str.replace(r'[^\d+\-$$$$\s]', '', regex=True)
     
-    # Format names
-    name_fields = ['first_name', 'last_name', 'full_name']
-    for field in name_fields:
-        if field in df_clean.columns:
-            df_clean[field] = df_clean[field].astype(str).str.title().str.strip()
+    # Standardize names
+    name_columns = ['first_name', 'last_name', 'full_name']
+    for col in name_columns:
+        if col in df_clean.columns:
+            df_clean[col] = df_clean[col].str.title().str.strip()
     
     # Handle dates
-    if 'date_of_birth' in df_clean.columns:
-        df_clean['date_of_birth'] = pd.to_datetime(df_clean['date_of_birth'], errors='coerce')
-    
-    # Remove completely empty rows
-    df_clean = df_clean.dropna(how='all')
+    if 'assessment_date' in df_clean.columns:
+        df_clean['assessment_date'] = pd.to_datetime(df_clean['assessment_date'], errors='coerce')
     
     return df_clean
 
-def get_client_completeness(client_data):
-    """Calculate completeness percentage for a client"""
-    total_fields = len(CLIENT_FIELDS)
-    filled_fields = 0
+def validate_data_quality(df):
+    """Analyze data quality and return metrics"""
+    if df.empty:
+        return {"overall_score": 0, "issues": [], "completeness": 0}
     
-    for field in CLIENT_FIELDS:
-        value = str(client_data.get(field, "")).strip()
-        if value and value.lower() not in ['', 'nan', 'none', 'null']:
-            filled_fields += 1
+    issues = []
+    total_cells = df.size
+    empty_cells = df.isnull().sum().sum() + (df == "").sum().sum()
+    completeness = ((total_cells - empty_cells) / total_cells) * 100
     
-    return (filled_fields / total_fields) * 100
-
-def format_field_value(value, field_name):
-    """Format field values for display"""
-    if pd.isna(value) or str(value).strip() in ['', 'nan', 'None', 'null']:
-        return '<span class="empty-value">Not provided</span>'
+    # Check for duplicate emails
+    if 'email' in df.columns:
+        email_duplicates = df['email'].duplicated().sum()
+        if email_duplicates > 0:
+            issues.append(f"🔄 {email_duplicates} duplicate email addresses")
     
-    value_str = str(value).strip()
+    # Check for invalid emails
+    if 'email' in df.columns:
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        invalid_emails = df[df['email'] != '']['email'].apply(
+            lambda x: not re.match(email_pattern, str(x))
+        ).sum()
+        if invalid_emails > 0:
+            issues.append(f"📧 {invalid_emails} invalid email formats")
     
-    # Special formatting for specific fields
-    if field_name == 'email':
-        return f'<a href="mailto:{value_str}">{value_str}</a>'
-    elif field_name == 'phone':
-        return f'<a href="tel:{value_str}">{value_str}</a>'
-    elif field_name == 'date_of_birth':
-        try:
-            date_obj = pd.to_datetime(value_str)
-            return date_obj.strftime('%B %d, %Y')
-        except:
-            return value_str
-    elif 'address' in field_name or field_name in ['city', 'state', 'country']:
-        return value_str.title()
-    else:
-        return value_str
-
-# ======= MAIN APPLICATION =======
-
-# Load live data
-with st.spinner("🔄 Loading live client data..."):
-    df = load_live_client_data()
-
-# Auto-refresh mechanism
-if auto_refresh and 'last_refresh' in st.session_state:
-    time_since_refresh = time.time() - st.session_state.last_refresh
-    if time_since_refresh > refresh_interval:
-        st.cache_data.clear()
-        st.rerun()
-
-st.session_state.last_refresh = time.time()
-
-# Display connection status and data info
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    status = "🟢 Connected" if gc else "🔴 Disconnected"
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>{status}</h3>
-        <p>Google Sheets</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>{len(df)}</h3>
-        <p>Total Clients</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col3:
-    if not df.empty:
-        avg_completeness = df.apply(lambda row: get_client_completeness(row), axis=1).mean()
-    else:
-        avg_completeness = 0
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>{avg_completeness:.1f}%</h3>
-        <p>Avg Completeness</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col4:
-    last_update = datetime.datetime.now().strftime("%H:%M:%S")
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>{last_update}</h3>
-        <p>Last Updated</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-if df.empty:
-    st.warning("📭 No client data found. Please check your Google Sheet and authentication.")
-    st.info("""
-    **Setup Instructions:**
-    1. Upload your Google Service Account JSON file
-    2. Ensure your sheet contains client data with the specified field names
-    3. The sheet should be named 'Clients', 'Client Data', or be the first sheet
-    """)
-else:
-    # ======= CLIENT SELECTION =======
-    st.markdown('<div class="search-container">', unsafe_allow_html=True)
-    st.subheader("🔍 Select Client Profile")
+    # Check for missing critical fields
+    critical_fields = ['full_name', 'email']
+    for field in critical_fields:
+        if field in df.columns:
+            missing = df[field].isnull().sum() + (df[field] == "").sum()
+            if missing > 0:
+                issues.append(f"❗ {missing} missing {field} entries")
     
-    # Search and filter options
-    search_col1, search_col2 = st.columns([2, 1])
+    # Calculate overall score
+    overall_score = max(0, completeness - len(issues) * 5)
     
-    with search_col1:
-        search_term = st.text_input(
-            "🔎 Search clients:",
-            placeholder="Search by name, email, company...",
-            help="Search across all client fields"
+    return {
+        "overall_score": overall_score,
+        "issues": issues,
+        "completeness": completeness,
+        "total_records": len(df),
+        "empty_cells": empty_cells
+    }
+
+def create_summary_metrics(all_data):
+    """Create summary metrics across all tabs"""
+    total_records = sum(len(df) for df in all_data.values() if not df.empty)
+    
+    # Get unique clients across all tabs
+    unique_clients = set()
+    for df in all_data.values():
+        if not df.empty and 'full_name' in df.columns:
+            unique_clients.update(df['full_name'].dropna().unique())
+    
+    # Industry distribution from Basic Info
+    industries = []
+    if 'Basic Info' in all_data and not all_data['Basic Info'].empty:
+        industries = all_data['Basic Info']['industry'].value_counts().to_dict()
+    
+    # Recent assessments
+    recent_assessments = 0
+    if 'Basic Info' in all_data and not all_data['Basic Info'].empty:
+        df = all_data['Basic Info']
+        if 'assessment_date' in df.columns:
+            recent_date = datetime.datetime.now() - datetime.timedelta(days=30)
+            recent_assessments = len(df[pd.to_datetime(df['assessment_date'], errors='coerce') > recent_date])
+    
+    return {
+        "total_records": total_records,
+        "unique_clients": len(unique_clients),
+        "industries": industries,
+        "recent_assessments": recent_assessments
+    }
+
+# ======= MAIN APPLICATION LOGIC =======
+
+if view_mode == "📊 Dashboard":
+    st.header("📊 CRM Dashboard")
+    
+    # Load all data for dashboard
+    all_data = {}
+    with st.spinner("Loading dashboard data..."):
+        for tab_name in tabs_config.keys():
+            all_data[tab_name] = load_gsheet_data(tab_name)
+    
+    # Summary metrics
+    metrics = create_summary_metrics(all_data)
+    
+    # Display key metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="📊 Total Records",
+            value=metrics["total_records"],
+            delta=f"Across {len(tabs_config)} sections"
         )
     
-    with search_col2:
-        sort_by = st.selectbox(
-            "📊 Sort by:",
-            ["full_name", "email", "company_id", "first_name", "last_name"],
-            format_func=lambda x: x.replace('_', ' ').title()
+    with col2:
+        st.metric(
+            label="👥 Unique Clients",
+            value=metrics["unique_clients"],
+            delta="Individual profiles"
         )
     
-    # Filter clients based on search
+    with col3:
+        st.metric(
+            label="🏭 Industries",
+            value=len(metrics["industries"]),
+            delta="Different sectors"
+        )
+    
+    with col4:
+        st.metric(
+            label="📅 Recent Assessments",
+            value=metrics["recent_assessments"],
+            delta="Last 30 days"
+        )
+    
+    # Data distribution charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📋 Records by Section")
+        section_data = {name: len(df) for name, df in all_data.items() if not df.empty}
+        if section_data:
+            fig = px.bar(
+                x=list(section_data.keys()),
+                y=list(section_data.values()),
+                title="Records Distribution Across Sections",
+                color=list(section_data.values()),
+                color_continuous_scale="Greens"
+            )
+            fig.update_layout(showlegend=False, xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("🏭 Industry Distribution")
+        if metrics["industries"]:
+            fig = px.pie(
+                values=list(metrics["industries"].values()),
+                names=list(metrics["industries"].keys()),
+                title="Client Distribution by Industry"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No industry data available")
+    
+    # Data quality overview
+    st.subheader("🔍 Data Quality Overview")
+    quality_cols = st.columns(len(tabs_config))
+    
+    for idx, (tab_name, df) in enumerate(all_data.items()):
+        with quality_cols[idx % len(quality_cols)]:
+            quality = validate_data_quality(df)
+            score = quality["overall_score"]
+            
+            if score >= 80:
+                color = "data-quality-good"
+                icon = "✅"
+            elif score >= 60:
+                color = "data-quality-warning"
+                icon = "⚠️"
+            else:
+                color = "data-quality-error"
+                icon = "❌"
+            
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>{icon} {tab_name}</h4>
+                <p class="{color}">Quality Score: {score:.1f}%</p>
+                <p>Records: {quality['total_records']}</p>
+                <p>Completeness: {quality['completeness']:.1f}%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+elif view_mode == "📋 Data Management":
+    # Get tab configuration
+    tab_config = tabs_config[selected_tab]
+    expected_columns = tab_config["columns"]
+    
+    # Display tab information
+    st.markdown(f"""
+    <div class="tab-description">
+        <h3>{tab_config['icon']} {selected_tab}</h3>
+        <p>{tab_config['description']}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Load data
+    if "df" not in st.session_state or st.session_state.get("last_tab") != selected_tab:
+        with st.spinner(f"Loading {selected_tab} data..."):
+            st.session_state.df = load_gsheet_data(selected_tab)
+            st.session_state.last_tab = selected_tab
+    
+    df = st.session_state.df
+    
+    # Data quality check
+    quality = validate_data_quality(df)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Total Records", len(df))
+    with col2:
+        st.metric("✅ Data Quality", f"{quality['overall_score']:.1f}%")
+    with col3:
+        st.metric("📈 Completeness", f"{quality['completeness']:.1f}%")
+    
+    # Display data quality issues
+    if quality["issues"]:
+        with st.expander("⚠️ Data Quality Issues", expanded=False):
+            for issue in quality["issues"]:
+                st.warning(issue)
+    
+    # ======= ENHANCED FILTERING =======
+    st.subheader("🔍 Advanced Filtering")
+    
+    filter_col1, filter_col2, filter_col3 = st.columns(3)
+    
+    with filter_col1:
+        # Text search
+        search_term = st.text_input("🔎 Search all fields:", placeholder="Enter search term...")
+    
+    with filter_col2:
+        # Column filter
+        if not df.empty:
+            filter_column = st.selectbox("📋 Filter by column:", ["All"] + expected_columns)
+        else:
+            filter_column = "All"
+    
+    with filter_col3:
+        # Date range filter (if applicable)
+        if 'assessment_date' in expected_columns and not df.empty:
+            date_filter = st.checkbox("📅 Filter by date range")
+            if date_filter:
+                start_date = st.date_input("Start date", datetime.date.today() - datetime.timedelta(days=365))
+                end_date = st.date_input("End date", datetime.date.today())
+    
+    # Apply filters
     filtered_df = df.copy()
     
-    if search_term:
-        mask = df.astype(str).apply(
-            lambda x: x.str.contains(search_term, case=False, na=False)
-        ).any(axis=1)
+    if search_term and not df.empty:
+        mask = df.astype(str).apply(lambda x: x.str.contains(search_term, case=False, na=False)).any(axis=1)
         filtered_df = df[mask]
     
-    # Sort clients
-    if sort_by in filtered_df.columns:
-        filtered_df = filtered_df.sort_values(sort_by)
+    if filter_column != "All" and not df.empty:
+        unique_values = df[filter_column].unique()
+        selected_values = st.multiselect(f"Select {filter_column} values:", unique_values)
+        if selected_values:
+            filtered_df = filtered_df[filtered_df[filter_column].isin(selected_values)]
     
-    st.markdown('</div>', unsafe_allow_html=True)
+    # ======= CSV UPLOAD AND MERGE =======
+    st.subheader("📤 Data Import")
+    uploaded_file = st.file_uploader(f"Upload {selected_tab} CSV to merge:", type=["csv"])
     
-    # ======= CLIENT LIST =======
-    if filtered_df.empty:
-        st.info("🔍 No clients found matching your search criteria.")
-    else:
-        st.subheader(f"👥 Client List ({len(filtered_df)} clients)")
-        
-        # Create client selection
-        client_options = []
-        for idx, row in filtered_df.iterrows():
-            full_name = row.get('full_name', 'Unknown')
-            email = row.get('email', 'No email')
-            company = row.get('company_id', 'No company')
-            completeness = get_client_completeness(row)
+    if uploaded_file:
+        try:
+            new_df = pd.read_csv(uploaded_file)
             
-            # Status indicator based on completeness
-            if completeness >= 80:
-                status = "🟢"
-            elif completeness >= 50:
-                status = "🟡"
-            else:
-                status = "🔴"
+            # Validate columns
+            missing_cols = set(expected_columns) - set(new_df.columns)
+            if missing_cols:
+                st.warning(f"Missing columns in uploaded file: {missing_cols}")
+                for col in missing_cols:
+                    new_df[col] = ""
             
-            display_text = f"{status} {full_name} ({email}) - {company} [{completeness:.0f}% complete]"
-            client_options.append((display_text, idx))
+            new_df = new_df[expected_columns]
+            new_df = clean_dataframe(new_df)
+            
+            # Preview before merge
+            st.write("📋 Preview of uploaded data:")
+            st.dataframe(new_df.head(), use_container_width=True)
+            
+            if st.button("✅ Confirm Merge"):
+                original_count = len(df)
+                df = pd.concat([df, new_df], ignore_index=True).drop_duplicates()
+                new_count = len(df)
+                st.session_state.df = df
+                st.success(f"✅ Merged! Added {new_count - original_count} new records.")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"❌ Error reading CSV: {e}")
+    
+    # ======= ENHANCED DATA DISPLAY =======
+    st.subheader("📊 Data Table")
+    
+    if not filtered_df.empty:
+        # Pagination
+        page_size = st.selectbox("Records per page:", [10, 25, 50, 100], index=1)
+        total_pages = (len(filtered_df) - 1) // page_size + 1
         
-        # Client selection dropdown
-        if client_options:
-            selected_display, selected_idx = st.selectbox(
-                "Select a client to view their profile:",
-                client_options,
-                format_func=lambda x: x[0]
+        if total_pages > 1:
+            page = st.selectbox("Page:", range(1, total_pages + 1))
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            display_df = filtered_df.iloc[start_idx:end_idx]
+        else:
+            display_df = filtered_df
+        
+        # Display with enhanced formatting
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            height=400,
+            column_config={
+                col: st.column_config.TextColumn(
+                    col.replace('_', ' ').title(),
+                    width="medium"
+                ) for col in expected_columns
+            }
+        )
+        
+        st.caption(f"Showing {len(display_df)} of {len(filtered_df)} records")
+        
+        # Row selection for editing
+        if not display_df.empty:
+            selected_idx = st.selectbox(
+                "Select row to edit/delete:",
+                display_df.index,
+                format_func=lambda x: f"Row {x}: {' | '.join(str(display_df.at[x, col])[:20] for col in expected_columns[:2])}"
             )
+        else:
+            selected_idx = None
+    else:
+        st.info("No data to display. Upload a CSV file or add entries manually.")
+        selected_idx = None
+    
+    # ======= ENHANCED EDIT/DELETE =======
+    if selected_idx is not None and not df.empty:
+        st.subheader("✏️ Edit Selected Record")
+        
+        with st.form("edit_form"):
+            edit_data = {}
             
-            # ======= INDIVIDUAL CLIENT PROFILE =======
-            if selected_idx is not None:
-                client_data = filtered_df.loc[selected_idx]
+            # Create dynamic form based on column types
+            for col in expected_columns:
+                value = df.at[selected_idx, col]
                 
-                # Profile header
-                full_name = client_data.get('full_name', 'Unknown Client')
-                email = client_data.get('email', 'No email provided')
-                completeness = get_client_completeness(client_data)
+                if col == "assessment_date":
+                    try:
+                        value = pd.to_datetime(value).date() if pd.notna(value) else datetime.date.today()
+                    except:
+                        value = datetime.date.today()
+                    edit_data[col] = st.date_input(col.replace('_', ' ').title(), value=value)
                 
-                st.markdown(f"""
-                <div class="profile-header">
-                    <h1 style='margin:0; font-size:2.5em;'>{full_name}</h1>
-                    <p style='margin:0.5rem 0 0 0; font-size:1.2em; opacity:0.9;'>{email}</p>
-                    <p style='margin:0.5rem 0 0 0; font-size:1em; opacity:0.8;'>Profile Completeness: {completeness:.1f}%</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Display fields by category
-                for category, fields in FIELD_CATEGORIES.items():
-                    st.markdown(f"""
-                    <div class="field-section">
-                        <h3 style='margin-top:0; color:#495057;'>{category}</h3>
-                    """, unsafe_allow_html=True)
-                    
-                    # Create field rows
-                    for field in fields:
-                        if field in CLIENT_FIELDS:
-                            field_label = field.replace('_', ' ').title()
-                            field_value = format_field_value(client_data.get(field), field)
-                            
-                            st.markdown(f"""
-                            <div class="field-row">
-                                <div class="field-label">{field_label}:</div>
-                                <div class="field-value">{field_value}</div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                
-                # ======= PROFILE ACTIONS =======
-                st.markdown("---")
-                st.subheader("🔧 Profile Actions")
-                
-                action_col1, action_col2, action_col3 = st.columns(3)
-                
-                with action_col1:
-                    if st.button("📧 Send Email", key="send_email"):
-                        email_addr = client_data.get('email', '')
-                        if email_addr:
-                            st.success(f"Email client would open to: {email_addr}")
-                        else:
-                            st.warning("No email address available")
-                
-                with action_col2:
-                    if st.button("📞 Call Client", key="call_client"):
-                        phone = client_data.get('phone', '')
-                        if phone:
-                            st.success(f"Phone dialer would open: {phone}")
-                        else:
-                            st.warning("No phone number available")
-                
-                with action_col3:
-                    if st.button("📝 Edit Profile", key="edit_profile"):
-                        st.info("Edit functionality would open here")
-                
-                # ======= EXPORT CLIENT DATA =======
-                st.markdown("---")
-                st.subheader("📥 Export Client Data")
-                
-                # Prepare client data for export
-                client_export_data = pd.DataFrame([client_data])
-                
-                export_col1, export_col2 = st.columns(2)
-                
-                with export_col1:
-                    csv_data = client_export_data.to_csv(index=False)
-                    st.download_button(
-                        label="📄 Download as CSV",
-                        data=csv_data,
-                        file_name=f"{full_name.replace(' ', '_')}_profile.csv",
-                        mime='text/csv'
+                elif col in ['email']:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value),
+                        help="Enter a valid email address"
                     )
                 
-                with export_col2:
-                    json_data = client_export_data.to_json(orient='records', indent=2)
-                    st.download_button(
-                        label="🔗 Download as JSON",
-                        data=json_data,
-                        file_name=f"{full_name.replace(' ', '_')}_profile.json",
-                        mime='application/json'
+                elif col in ['phone']:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value),
+                        help="Enter phone number with country code"
                     )
+                
+                else:
+                    edit_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        value=str(value)
+                    )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.form_submit_button("💾 Save Changes", type="primary"):
+                    # Validate data before saving
+                    valid = True
+                    
+                    if 'email' in edit_data and edit_data['email']:
+                        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                        if not re.match(email_pattern, edit_data['email']):
+                            st.error("❌ Invalid email format")
+                            valid = False
+                    
+                    if valid:
+                        for col in expected_columns:
+                            df.at[selected_idx, col] = edit_data[col]
+                        st.session_state.df = df
+                        st.success("✅ Record updated successfully!")
+                        st.rerun()
+            
+            with col2:
+                if st.form_submit_button("🗑️ Delete Record", type="secondary"):
+                    df = df.drop(index=selected_idx).reset_index(drop=True)
+                    st.session_state.df = df
+                    st.success("✅ Record deleted successfully!")
+                    st.rerun()
+    
+    # ======= ENHANCED ADD NEW ENTRY =======
+    st.subheader("➕ Add New Record")
+    
+    with st.form("add_entry_form"):
+        new_data = {}
+        
+        # Create columns for better layout
+        form_cols = st.columns(min(3, len(expected_columns)))
+        
+        for idx, col in enumerate(expected_columns):
+            col_idx = idx % len(form_cols)
+            
+            with form_cols[col_idx]:
+                if col == "assessment_date":
+                    new_data[col] = st.date_input(
+                        col.replace('_', ' ').title(),
+                        value=datetime.date.today()
+                    )
+                elif col == "email":
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder="user@example.com",
+                        help="Enter a valid email address"
+                    )
+                elif col == "phone":
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder="+1-234-567-8900",
+                        help="Include country code"
+                    )
+                else:
+                    new_data[col] = st.text_input(
+                        col.replace('_', ' ').title(),
+                        placeholder=f"Enter {col.replace('_', ' ')}"
+                    )
+        
+        if st.form_submit_button("➕ Add New Record", type="primary"):
+            # Validate before adding
+            valid = True
+            
+            if new_data.get('email'):
+                email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                if not re.match(email_pattern, new_data['email']):
+                    st.error("❌ Invalid email format")
+                    valid = False
+            
+            if valid:
+                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                df = df.drop_duplicates()
+                st.session_state.df = df
+                st.success("✅ New record added successfully!")
+                st.rerun()
+    
+    # ======= ENHANCED EXPORT OPTIONS =======
+    st.subheader("📥 Export Data")
+    
+    export_col1, export_col2, export_col3 = st.columns(3)
+    
+    with export_col1:
+        # CSV Export
+        csv_data = filtered_df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download as CSV",
+            data=csv_data,
+            file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.csv",
+            mime='text/csv'
+        )
+    
+    with export_col2:
+        # Excel Export
+        if not filtered_df.empty:
+            excel_buffer = pd.ExcelWriter('temp.xlsx', engine='openpyxl')
+            filtered_df.to_excel(excel_buffer, index=False, sheet_name=selected_tab)
+            excel_buffer.close()
+            
+            with open('temp.xlsx', 'rb') as f:
+                st.download_button(
+                    label="📊 Download as Excel",
+                    data=f.read(),
+                    file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.xlsx",
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+    
+    with export_col3:
+        # JSON Export
+        json_data = filtered_df.to_json(orient='records', indent=2)
+        st.download_button(
+            label="🔗 Download as JSON",
+            data=json_data,
+            file_name=f"{selected_tab.lower().replace(' ','_')}_{datetime.date.today()}.json",
+            mime='application/json'
+        )
+    
+    # ======= GOOGLE SHEETS SYNC =======
+    st.subheader("🔄 Sync with Google Sheets")
+    
+    def sync_to_gsheet(df, tab_name):
+        if not gc:
+            st.error("❌ Google authentication required.")
+            return False
+        
+        try:
+            sh = gc.open_by_key(SHEET_ID)
+            
+            # Remove existing worksheet and create new one
+            try:
+                worksheet = sh.worksheet(tab_name)
+                sh.del_worksheet(worksheet)
+            except gspread.exceptions.WorksheetNotFound:
+                pass
+            
+            worksheet = sh.add_worksheet(title=tab_name, rows="1000", cols="50")
+            
+            # Prepare data for upload
+            upload_data = [expected_columns] + df.fillna("").astype(str).values.tolist()
+            worksheet.update(upload_data)
+            
+            st.success(f"✅ '{tab_name}' synced successfully!")
+            st.info(f"[📊 View in Google Sheets]({SHEET_URL})")
+            return True
+            
+        except Exception as e:
+            st.error(f"❌ Sync failed: {e}")
+            return False
+    
+    sync_col1, sync_col2 = st.columns(2)
+    
+    with sync_col1:
+        if st.button("🚀 Sync Current Tab", type="primary"):
+            with st.spinner("Syncing to Google Sheets..."):
+                sync_to_gsheet(df, selected_tab)
+    
+    with sync_col2:
+        if st.button("🔄 Refresh from Sheets"):
+            with st.spinner("Refreshing data..."):
+                st.session_state.df = load_gsheet_data(selected_tab)
+                st.success("✅ Data refreshed from Google Sheets!")
+                st.rerun()
+
+elif view_mode == "📈 Analytics":
+    st.header("📈 Advanced Analytics")
+    
+    # Load all data for analytics
+    all_data = {}
+    with st.spinner("Loading analytics data..."):
+        for tab_name in tabs_config.keys():
+            all_data[tab_name] = load_gsheet_data(tab_name)
+    
+    # Analytics tabs
+    analytics_tab = st.selectbox(
+        "Select Analytics View:",
+        ["📊 Overview", "👥 Client Analysis", "📅 Temporal Analysis", "🔍 Data Insights"]
+    )
+    
+    if analytics_tab == "📊 Overview":
+        st.subheader("📊 System Overview")
+        
+        # Create comprehensive metrics
+        total_clients = 0
+        total_assessments = 0
+        active_sections = 0
+        
+        for name, df in all_data.items():
+            if not df.empty:
+                active_sections += 1
+                if 'full_name' in df.columns:
+                    total_clients += len(df['full_name'].dropna().unique())
+                total_assessments += len(df)
+        
+        # Display overview metrics
+        metric_cols = st.columns(4)
+        
+        with metric_cols[0]:
+            st.metric("🎯 Active Sections", active_sections, f"of {len(tabs_config)}")
+        
+        with metric_cols[1]:
+            st.metric("👥 Total Clients", total_clients)
+        
+        with metric_cols[2]:
+            st.metric("📋 Total Records", total_assessments)
+        
+        with metric_cols[3]:
+            avg_records = total_assessments / max(active_sections, 1)
+            st.metric("📊 Avg Records/Section", f"{avg_records:.1f}")
+        
+        # Section activity heatmap
+        st.subheader("🔥 Section Activity Heatmap")
+        
+        activity_data = []
+        for name, df in all_data.items():
+            quality = validate_data_quality(df)
+            activity_data.append({
+                'Section': name,
+                'Records': len(df),
+                'Quality Score': quality['overall_score'],
+                'Completeness': quality['completeness']
+            })
+        
+        activity_df = pd.DataFrame(activity_data)
+        
+        if not activity_df.empty:
+            fig = px.scatter(
+                activity_df,
+                x='Records',
+                y='Quality Score',
+                size='Completeness',
+                color='Completeness',
+                hover_name='Section',
+                title="Section Performance Matrix",
+                labels={'Quality Score': 'Data Quality (%)', 'Records': 'Number of Records'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    elif analytics_tab == "👥 Client Analysis":
+        st.subheader("👥 Client Demographics Analysis")
+        
+        basic_info = all_data.get('Basic Info', pd.DataFrame())
+        
+        if not basic_info.empty:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Industry distribution
+                if 'industry' in basic_info.columns:
+                    industry_counts = basic_info['industry'].value_counts()
+                    if not industry_counts.empty:
+                        fig = px.pie(
+                            values=industry_counts.values,
+                            names=industry_counts.index,
+                            title="Client Distribution by Industry"
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Company size distribution
+                if 'company_size' in basic_info.columns:
+                    size_counts = basic_info['company_size'].value_counts()
+                    if not size_counts.empty:
+                        fig = px.bar(
+                            x=size_counts.index,
+                            y=size_counts.values,
+                            title="Distribution by Company Size",
+                            labels={'x': 'Company Size', 'y': 'Count'}
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+            
+            # Geographic analysis
+            contact_info = all_data.get('Contact Info', pd.DataFrame())
+            if not contact_info.empty and 'state' in contact_info.columns:
+                st.subheader("🗺️ Geographic Distribution")
+                state_counts = contact_info['state'].value_counts().head(10)
+                
+                fig = px.bar(
+                    x=state_counts.values,
+                    y=state_counts.index,
+                    orientation='h',
+                    title="Top 10 States by Client Count",
+                    labels={'x': 'Number of Clients', 'y': 'State'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        else:
+            st.info("No client data available for analysis")
+    
+    elif analytics_tab == "📅 Temporal Analysis":
+        st.subheader("📅 Time-based Analysis")
+        
+        basic_info = all_data.get('Basic Info', pd.DataFrame())
+        
+        if not basic_info.empty and 'assessment_date' in basic_info.columns:
+            # Convert dates
+            basic_info['assessment_date'] = pd.to_datetime(basic_info['assessment_date'], errors='coerce')
+            valid_dates = basic_info.dropna(subset=['assessment_date'])
+            
+            if not valid_dates.empty:
+                # Monthly trend
+                monthly_counts = valid_dates.groupby(valid_dates['assessment_date'].dt.to_period('M')).size()
+                
+                fig = px.line(
+                    x=monthly_counts.index.astype(str),
+                    y=monthly_counts.values,
+                    title="Assessment Trends Over Time",
+                    labels={'x': 'Month', 'y': 'Number of Assessments'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Day of week analysis
+                valid_dates['day_of_week'] = valid_dates['assessment_date'].dt.day_name()
+                dow_counts = valid_dates['day_of_week'].value_counts()
+                
+                fig = px.bar(
+                    x=['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+                    y=[dow_counts.get(day, 0) for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']],
+                    title="Assessments by Day of Week",
+                    labels={'x': 'Day of Week', 'y': 'Count'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No date data available for temporal analysis")
+    
+    elif analytics_tab == "🔍 Data Insights":
+        st.subheader("🔍 Advanced Data Insights")
+        
+        # Data completeness analysis
+        completeness_data = []
+        for name, df in all_data.items():
+            if not df.empty:
+                for col in df.columns:
+                    non_empty = df[col].notna().sum() + (df[col] != "").sum()
+                    completeness = (non_empty / len(df)) * 100
+                    completeness_data.append({
+                        'Section': name,
+                        'Field': col,
+                        'Completeness': completeness,
+                        'Records': len(df)
+                    })
+        
+        if completeness_data:
+            completeness_df = pd.DataFrame(completeness_data)
+            
+            # Heatmap of field completeness
+            pivot_df = completeness_df.pivot(index='Section', columns='Field', values='Completeness')
+            
+            fig = px.imshow(
+                pivot_df.values,
+                x=pivot_df.columns,
+                y=pivot_df.index,
+                color_continuous_scale='RdYlGn',
+                title="Field Completeness Heatmap (%)",
+                aspect='auto'
+            )
+            fig.update_layout(height=600)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Top incomplete fields
+            st.subheader("⚠️ Fields Needing Attention")
+            incomplete_fields = completeness_df[completeness_df['Completeness'] < 80].sort_values('Completeness')
+            
+            if not incomplete_fields.empty:
+                fig = px.bar(
+                    incomplete_fields.head(10),
+                    x='Completeness',
+                    y='Field',
+                    color='Section',
+                    orientation='h',
+                    title="Top 10 Incomplete Fields",
+                    labels={'Completeness': 'Completeness (%)', 'Field': 'Field Name'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.success("🎉 All fields have good completeness (>80%)!")
+
+elif view_mode == "⚙️ Settings":
+    st.header("⚙️ System Settings")
+    
+    # Configuration settings
+    st.subheader("📋 Tab Configuration")
+    
+    for tab_name, config in tabs_config.items():
+        with st.expander(f"{config['icon']} {tab_name}"):
+            st.write(f"**Description:** {config['description']}")
+            st.write(f"**Columns:** {len(config['columns'])}")
+            st.code(", ".join(config['columns']))
+    
+    # System information
+    st.subheader("ℹ️ System Information")
+    
+    info_col1, info_col2 = st.columns(2)
+    
+    with info_col1:
+        st.info(f"""
+        **Google Sheet ID:** `{SHEET_ID}`
+        **Total Sections:** {len(tabs_config)}
+        **Authentication:** {'✅ Connected' if gc else '❌ Not Connected'}
+        """)
+    
+    with info_col2:
+        st.info(f"""
+        **Cache TTL:** 5 minutes
+        **Page Size Options:** 10, 25, 50, 100
+        **Export Formats:** CSV, Excel, JSON
+        """)
+    
+    # Data management tools
+    st.subheader("🛠️ Data Management Tools")
+    
+    if st.button("🔄 Clear All Cache"):
+        st.cache_data.clear()
+        st.success("✅ Cache cleared successfully!")
+    
+    if st.button("📊 Regenerate Dashboard"):
+        if 'df' in st.session_state:
+            del st.session_state.df
+        st.success("✅ Dashboard will regenerate on next view!")
 
 # ======= FOOTER =======
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 2rem;'>
-    <p><strong>Live CRM Client Profiles</strong></p>
-    <p>🔄 Real-time Google Sheets Integration • 👥 Individual Client Views</p>
-    <p>Built with ❤️ using Streamlit + Google Sheets API</p>
+    <p><strong>Enhanced CRM Client Profiles Manager</strong></p>
+    <p>🚀 Advanced Analytics • 📊 Data Insights • 🔄 Real-time Sync</p>
+    <p>Built with ❤️ using Streamlit + Google Sheets + Plotly</p>
 </div>
 """, unsafe_allow_html=True)
-
